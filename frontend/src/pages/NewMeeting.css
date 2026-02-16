@@ -1,0 +1,131 @@
+/* ═══════════════════════════════════════════════════════
+   New Meeting — Form, Mode Selector
+   ═══════════════════════════════════════════════════════ */
+
+.new-meeting-form {
+    max-width: 720px;
+    margin: 0 auto;
+}
+
+.new-meeting-card {
+    padding: 36px;
+}
+
+/* ── Mode Selector ── */
+.nm-mode-selector {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    margin-bottom: 28px;
+}
+
+.nm-mode-btn {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+    padding: 24px 16px;
+    background: rgba(15, 20, 42, 0.4);
+    border: 1px solid var(--border-secondary);
+    border-radius: var(--radius-lg);
+    color: var(--text-secondary);
+    font-family: inherit;
+    font-size: 0.9375rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all var(--transition-base);
+    position: relative;
+    overflow: hidden;
+}
+
+.nm-mode-btn::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 2px;
+    background: var(--accent-gradient);
+    opacity: 0;
+    transition: opacity var(--transition-fast);
+}
+
+.nm-mode-btn:hover {
+    border-color: var(--border-hover);
+    color: var(--text-primary);
+}
+
+.nm-mode-btn.active {
+    background: rgba(99, 102, 241, 0.08);
+    border-color: var(--accent-primary);
+    color: var(--accent-primary-hover);
+    box-shadow: 0 0 20px rgba(99, 102, 241, 0.1);
+}
+
+.nm-mode-btn.active::before {
+    opacity: 1;
+}
+
+/* ── Live Meeting Info ── */
+.live-meeting-info {
+    display: flex;
+    gap: 16px;
+    padding: 20px;
+    background: rgba(99, 102, 241, 0.04);
+    border: 1px solid rgba(99, 102, 241, 0.1);
+    border-radius: var(--radius-lg);
+    margin-bottom: 20px;
+}
+
+.live-meeting-info .info-icon {
+    width: 48px;
+    height: 48px;
+    border-radius: var(--radius-md);
+    background: rgba(99, 102, 241, 0.1);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--accent-primary);
+    flex-shrink: 0;
+}
+
+.live-meeting-info h4 {
+    font-size: 0.9375rem;
+    font-weight: 700;
+    color: var(--text-primary);
+    margin-bottom: 4px;
+}
+
+.live-meeting-info p {
+    font-size: 0.8125rem;
+    color: var(--text-muted);
+    line-height: 1.5;
+}
+
+/* ── Actions ── */
+.nm-actions {
+    display: flex;
+    gap: 12px;
+    justify-content: flex-end;
+    margin-top: 12px;
+    padding-top: 20px;
+    border-top: 1px solid var(--border-secondary);
+}
+
+@media (max-width: 640px) {
+    .nm-mode-selector {
+        grid-template-columns: 1fr;
+    }
+
+    .new-meeting-card {
+        padding: 24px;
+    }
+
+    .nm-actions {
+        flex-direction: column;
+    }
+
+    .nm-actions .btn {
+        width: 100%;
+    }
+}
