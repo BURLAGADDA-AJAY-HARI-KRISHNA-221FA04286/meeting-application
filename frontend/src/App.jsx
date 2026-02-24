@@ -1,49 +1,49 @@
+import { lazy, Suspense } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, Outlet, useLocation, useParams } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 import { AuthProvider, useAuth } from './context/AuthContext';
-import Layout from './components/Layout';
-import LoginPage from './pages/LoginPage';
-import RegisterPage from './pages/RegisterPage';
-import DashboardPage from './pages/DashboardPage';
-import MeetingsPage from './pages/MeetingsPage';
-import NewMeetingPage from './pages/NewMeetingPage';
-import MeetingDetailPage from './pages/MeetingDetailPage';
-import TaskBoardPage from './pages/TaskBoardPage';
-import SettingsPage from './pages/SettingsPage';
-import VideoMeetingPage from './pages/VideoMeetingPage';
 import './pages/Mobile.css';
+
+/* ── Lazy-loaded pages (code-split at route level) ── */
+const Layout = lazy(() => import('./components/Layout'));
+const LoginPage = lazy(() => import('./pages/LoginPage'));
+const RegisterPage = lazy(() => import('./pages/RegisterPage'));
+const DashboardPage = lazy(() => import('./pages/DashboardPage'));
+const MeetingsPage = lazy(() => import('./pages/MeetingsPage'));
+const NewMeetingPage = lazy(() => import('./pages/NewMeetingPage'));
+const MeetingDetailPage = lazy(() => import('./pages/MeetingDetailPage'));
+const TaskBoardPage = lazy(() => import('./pages/TaskBoardPage'));
+const SettingsPage = lazy(() => import('./pages/SettingsPage'));
+const VideoMeetingPage = lazy(() => import('./pages/VideoMeetingPage'));
+
+/* ── Minimal full-screen loading spinner ── */
+function PageLoader() {
+  return (
+    <div style={{
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      minHeight: '100vh', background: '#0a0e1a',
+    }}>
+      <div className="spinner spinner-lg" />
+    </div>
+  );
+}
 
 function PrivateRoute() {
   const { user, loading } = useAuth();
   const location = useLocation();
-  if (loading) {
-    return (
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh' }}>
-        <div className="spinner spinner-lg" />
-      </div>
-    );
-  }
-  // Preserve the URL the user was trying to visit so we can redirect after login
+  if (loading) return <PageLoader />;
   return user ? <Outlet /> : <Navigate to={`/login?returnTo=${encodeURIComponent(location.pathname)}`} />;
 }
 
 function PublicRoute() {
   const { user, loading } = useAuth();
   const location = useLocation();
-  if (loading) {
-    return (
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh' }}>
-        <div className="spinner spinner-lg" />
-      </div>
-    );
-  }
-  // After login, redirect to the returnTo URL if present
+  if (loading) return <PageLoader />;
   const params = new URLSearchParams(location.search);
   const returnTo = params.get('returnTo');
   return user ? <Navigate to={returnTo || '/dashboard'} /> : <Outlet />;
 }
 
-// Direct join link component — redirects /join/:roomId → /meetings/room/:roomId
 function JoinRedirect() {
   const { roomId } = useParams();
   return <Navigate to={`/meetings/room/${roomId}`} replace />;
@@ -69,42 +69,39 @@ export default function App() {
           }}
         />
 
-        <Routes>
-          {/* Public routes */}
-          <Route element={<PublicRoute />}>
-            <Route path="/login" element={<LoginPage />} />
-            <Route path="/register" element={<RegisterPage />} />
-          </Route>
-
-          {/* Private routes */}
-          <Route element={<PrivateRoute />}>
-            {/* Pages inside Layout (with sidebar) */}
-            <Route element={<Layout />}>
-              <Route path="/dashboard" element={<DashboardPage />} />
-              <Route path="/meetings" element={<MeetingsPage />} />
-              <Route path="/meetings/new" element={<NewMeetingPage />} />
-              <Route path="/meetings/:id" element={<MeetingDetailPage />} />
-              <Route path="/tasks" element={<TaskBoardPage />} />
-              <Route path="/settings" element={<SettingsPage />} />
+        <Suspense fallback={<PageLoader />}>
+          <Routes>
+            {/* Public routes */}
+            <Route element={<PublicRoute />}>
+              <Route path="/login" element={<LoginPage />} />
+              <Route path="/register" element={<RegisterPage />} />
             </Route>
 
-            {/* Direct join links — /join/:roomId goes straight to meeting room */}
-            <Route path="/join/:roomId" element={<JoinRedirect />} />
+            {/* Private routes */}
+            <Route element={<PrivateRoute />}>
+              <Route element={<Layout />}>
+                <Route path="/dashboard" element={<DashboardPage />} />
+                <Route path="/meetings" element={<MeetingsPage />} />
+                <Route path="/meetings/new" element={<NewMeetingPage />} />
+                <Route path="/meetings/:id" element={<MeetingDetailPage />} />
+                <Route path="/tasks" element={<TaskBoardPage />} />
+                <Route path="/settings" element={<SettingsPage />} />
+              </Route>
 
-            {/* Video meeting — fullscreen, outside Layout */}
-            <Route path="/meetings/room/:roomId" element={<VideoMeetingPage />} />
+              <Route path="/join/:roomId" element={<JoinRedirect />} />
+              <Route path="/meetings/room/:roomId" element={<VideoMeetingPage />} />
 
-            {/* Redirects for old routes */}
-            <Route path="/join" element={<Navigate to="/meetings/new" replace />} />
-            <Route path="/video-meeting" element={<Navigate to="/meetings/new" replace />} />
-            <Route path="/video-meeting/:roomId" element={<Navigate to="/meetings/new" replace />} />
-            <Route path="/meetings/live" element={<Navigate to="/meetings/new" replace />} />
-            <Route path="/meetings/:id/live" element={<Navigate to="/meetings/new" replace />} />
-          </Route>
+              {/* Legacy redirects */}
+              <Route path="/join" element={<Navigate to="/meetings/new" replace />} />
+              <Route path="/video-meeting" element={<Navigate to="/meetings/new" replace />} />
+              <Route path="/video-meeting/:roomId" element={<Navigate to="/meetings/new" replace />} />
+              <Route path="/meetings/live" element={<Navigate to="/meetings/new" replace />} />
+              <Route path="/meetings/:id/live" element={<Navigate to="/meetings/new" replace />} />
+            </Route>
 
-          {/* Catch-all */}
-          <Route path="*" element={<Navigate to="/dashboard" />} />
-        </Routes>
+            <Route path="*" element={<Navigate to="/dashboard" />} />
+          </Routes>
+        </Suspense>
       </AuthProvider>
     </BrowserRouter>
   );

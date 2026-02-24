@@ -58,7 +58,7 @@
     color: #fff;
     flex-shrink: 0;
     box-shadow: 0 4px 16px var(--accent-glow);
-    animation: pulse-glow 4s ease-in-out infinite;
+    animation: pulse-glow 6s ease-in-out infinite;
 }
 
 .logo-text {
