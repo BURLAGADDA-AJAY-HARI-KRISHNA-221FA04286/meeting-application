@@ -148,13 +148,42 @@
     color: var(--accent-primary);
 }
 
-.mc-delete {
+.mc-actions {
+    display: flex;
+    gap: 4px;
+    align-items: center;
+}
+
+.mc-actions .btn {
     opacity: 0;
     transition: opacity var(--transition-fast);
 }
 
-.meeting-card:hover .mc-delete {
+.meeting-card:hover .mc-actions .btn {
     opacity: 1;
+}
+
+.mc-analyze {
+    color: var(--accent-primary) !important;
+}
+
+.mc-delete:hover {
+    color: #ef4444 !important;
+}
+
+/* Spinner animation for Loader2 icon */
+.spin {
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    from {
+        transform: rotate(0deg);
+    }
+
+    to {
+        transform: rotate(360deg);
+    }
 }
 
 .mc-title {

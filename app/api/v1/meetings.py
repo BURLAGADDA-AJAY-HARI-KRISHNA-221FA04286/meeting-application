@@ -439,7 +439,7 @@ def _transcribe_with_gemini(file_path: str, mime_type: str) -> str:
 async def upload_media(
     file: UploadFile = File(...),
     title: str = Form(default=""),
-    auto_analyze: bool = Form(default=True),
+    auto_analyze: bool = Form(default=False),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):

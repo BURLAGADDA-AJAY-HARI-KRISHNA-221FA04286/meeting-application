@@ -83,7 +83,7 @@ export const meetingsAPI = {
     update: (id, data) => api.patch(`/meetings/${id}`, data).then(r => { invalidateCache('/meetings'); return r; }),
     delete: (id) => api.delete(`/meetings/${id}`).then(r => { invalidateCache('/meetings'); return r; }),
     dashboard: () => cachedGet('/meetings/dashboard'),
-    uploadMedia: (file, title = '', autoAnalyze = true) => {
+    uploadMedia: (file, title = '', autoAnalyze = false) => {
         const formData = new FormData();
         formData.append('file', file);
         formData.append('title', title);

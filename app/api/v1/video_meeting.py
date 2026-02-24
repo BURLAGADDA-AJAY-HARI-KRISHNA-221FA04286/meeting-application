@@ -92,7 +92,7 @@ class TranscriptEntry(BaseModel):
 class SaveTranscriptRequest(BaseModel):
     title: str = Field(default="Video Meeting", max_length=255)
     transcript: list[TranscriptEntry] = []
-    auto_analyze: bool = True
+    auto_analyze: bool = False
 
 
 class SaveTranscriptResponse(BaseModel):

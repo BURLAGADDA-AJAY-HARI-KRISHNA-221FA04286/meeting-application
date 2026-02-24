@@ -1,10 +1,10 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { meetingsAPI } from '../api';
+import { meetingsAPI, aiAPI } from '../api';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
     Plus, Search, Video, Calendar, Trash2, Grid3X3,
-    List, ChevronRight, Filter, Brain, Clock
+    List, ChevronRight, Brain, Clock, Sparkles, Loader2
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import './Meetings.css';
@@ -23,6 +23,7 @@ export default function MeetingsPage() {
     const [statusFilter, setStatusFilter] = useState('');
     const [sort, setSort] = useState('newest');
     const [viewMode, setViewMode] = useState('grid');
+    const [analyzingIds, setAnalyzingIds] = useState(new Set());
 
     const fetchMeetings = useCallback(() => {
         const params = {};
@@ -36,15 +37,37 @@ export default function MeetingsPage() {
 
     useEffect(() => { fetchMeetings(); }, [fetchMeetings]);
 
+    // ── Delete with optimistic UI ──
     const handleDelete = async (e, id) => {
         e.stopPropagation();
         if (!confirm('Delete this meeting?')) return;
+        // Optimistic: remove from UI immediately
+        setMeetings(prev => prev.filter(m => m.id !== id));
         try {
             await meetingsAPI.delete(id);
             toast.success('Meeting deleted');
-            fetchMeetings();
         } catch {
             toast.error('Failed to delete');
+            fetchMeetings(); // Revert on error
+        }
+    };
+
+    // ── Analyze meeting ──
+    const handleAnalyze = async (e, id) => {
+        e.stopPropagation();
+        setAnalyzingIds(prev => new Set(prev).add(id));
+        try {
+            await aiAPI.analyze(id);
+            toast.success('Analysis complete!');
+            // Update local state to reflect analyzed status
+            setMeetings(prev => prev.map(m =>
+                m.id === id ? { ...m, has_analysis: true } : m
+            ));
+        } catch (err) {
+            const msg = err.response?.data?.detail || 'Analysis failed';
+            toast.error(msg);
+        } finally {
+            setAnalyzingIds(prev => { const s = new Set(prev); s.delete(id); return s; });
         }
     };
 
@@ -54,7 +77,7 @@ export default function MeetingsPage() {
         return (a.title || '').localeCompare(b.title || '');
     });
 
-    const analyzed = meetings.filter(m => m.status === 'analyzed').length;
+    const analyzed = meetings.filter(m => m.has_analysis).length;
     const pending = meetings.length - analyzed;
 
     if (loading) {
@@ -188,17 +211,36 @@ export default function MeetingsPage() {
                             >
                                 <div className="mc-header">
                                     <div className="mc-icon"><Video size={18} /></div>
-                                    <button
-                                        className="btn btn-ghost btn-sm mc-delete"
-                                        onClick={(e) => handleDelete(e, m.id)}
-                                    >
-                                        <Trash2 size={14} />
-                                    </button>
+                                    <div className="mc-actions">
+                                        {!m.has_analysis && (
+                                            <button
+                                                className="btn btn-ghost btn-sm mc-analyze"
+                                                onClick={(e) => handleAnalyze(e, m.id)}
+                                                disabled={analyzingIds.has(m.id)}
+                                                title="Analyze with AI"
+                                            >
+                                                {analyzingIds.has(m.id) ? (
+                                                    <Loader2 size={14} className="spin" />
+                                                ) : (
+                                                    <Sparkles size={14} />
+                                                )}
+                                            </button>
+                                        )}
+                                        <button
+                                            className="btn btn-ghost btn-sm mc-delete"
+                                            onClick={(e) => handleDelete(e, m.id)}
+                                            title="Delete meeting"
+                                        >
+                                            <Trash2 size={14} />
+                                        </button>
+                                    </div>
                                 </div>
                                 <div>
                                     <div className="mc-title">{m.title}</div>
                                     <div className="mc-excerpt">
-                                        {m.transcript ? m.transcript.substring(0, 120) + '…' : 'No transcript'}
+                                        {m.subtitle_count > 0
+                                            ? `${m.subtitle_count} transcript lines`
+                                            : 'No transcript'}
                                     </div>
                                 </div>
                                 <div className="mc-footer">
@@ -206,9 +248,13 @@ export default function MeetingsPage() {
                                         <Calendar size={12} />
                                         {new Date(m.created_at).toLocaleDateString()}
                                     </span>
-                                    <span className={`badge ${m.status === 'analyzed' ? 'badge-success' : 'badge-warning'}`}>
-                                        {m.status === 'analyzed' ? '✓ Analyzed' : '⏳ Pending'}
-                                    </span>
+                                    {analyzingIds.has(m.id) ? (
+                                        <span className="badge badge-info">⏳ Analyzing…</span>
+                                    ) : (
+                                        <span className={`badge ${m.has_analysis ? 'badge-success' : 'badge-warning'}`}>
+                                            {m.has_analysis ? '✓ Analyzed' : '⏳ Pending'}
+                                        </span>
+                                    )}
                                 </div>
                             </motion.div>
                         ))}
@@ -228,7 +274,7 @@ export default function MeetingsPage() {
                                 whileHover={{ x: 3 }}
                             >
                                 <div className="mli-icon">
-                                    {m.status === 'analyzed' ? <Brain size={16} /> : <Video size={16} />}
+                                    {m.has_analysis ? <Brain size={16} /> : <Video size={16} />}
                                 </div>
                                 <div className="mli-info">
                                     <div className="mli-title">{m.title}</div>
@@ -237,9 +283,31 @@ export default function MeetingsPage() {
                                         {new Date(m.created_at).toLocaleDateString()}
                                     </div>
                                 </div>
-                                <span className={`badge mli-status ${m.status === 'analyzed' ? 'badge-success' : 'badge-warning'}`}>
-                                    {m.status || 'pending'}
+                                {!m.has_analysis && (
+                                    <button
+                                        className="btn btn-ghost btn-sm"
+                                        onClick={(e) => handleAnalyze(e, m.id)}
+                                        disabled={analyzingIds.has(m.id)}
+                                        title="Analyze with AI"
+                                        style={{ marginRight: 8 }}
+                                    >
+                                        {analyzingIds.has(m.id) ? (
+                                            <Loader2 size={14} className="spin" />
+                                        ) : (
+                                            <Sparkles size={14} />
+                                        )}
+                                    </button>
+                                )}
+                                <span className={`badge mli-status ${m.has_analysis ? 'badge-success' : 'badge-warning'}`}>
+                                    {m.has_analysis ? 'analyzed' : 'pending'}
                                 </span>
+                                <button
+                                    className="btn btn-ghost btn-sm"
+                                    onClick={(e) => handleDelete(e, m.id)}
+                                    title="Delete meeting"
+                                >
+                                    <Trash2 size={14} />
+                                </button>
                                 <ChevronRight size={16} className="mli-arrow" />
                             </motion.div>
                         ))}
