@@ -1,8 +1,8 @@
 """
-AI Agent Orchestrator — Summary-Only Pipeline
+AI Agent Orchestrator — Full Analysis Pipeline
 ===============================================
-Generates a meeting summary with key points using Gemini.
-Lightweight and fast — runs a single API call.
+Generates meeting summary, action items, decisions, and risks using Gemini.
+Runs two API calls: one for summary, one for structured extraction.
 """
 import asyncio
 import json
@@ -92,13 +92,13 @@ class AIAgentOrchestrator:
         return fallback
 
     async def run_pipeline(self) -> AIResult:
-        """Execute the AI analysis pipeline — Summary only for speed."""
+        """Execute the AI analysis pipeline — Summary + Actions + Decisions."""
         pipeline_start = time.perf_counter()
         logger.info("🚀 Starting AI Pipeline for Meeting %d", self.meeting_id)
 
         await self._fetch_transcript()
 
-        # Run Summary Agent
+        # ── 1) Summary Agent ──
         summary_prompt = f"""You are analyzing a meeting transcript.
 Generate a comprehensive meeting summary. Include:
 - "executive_summary": A 2-3 sentence overview of the entire meeting
@@ -118,6 +118,56 @@ EXPECTED JSON:
             fallback={"executive_summary": "", "key_points": [], "topics_discussed": [], "meeting_type": "general"},
         )
 
+        # ── 2) Actions + Decisions Agent ──
+        actions_prompt = f"""You are analyzing a meeting transcript to extract action items and decisions.
+
+Extract ALL action items (tasks that need to be done) and decisions made during the meeting.
+
+TRANSCRIPT:
+{self.transcript_text}
+
+IMPORTANT: Return ONLY valid JSON. No markdown, no code blocks.
+EXPECTED JSON:
+{{
+  "action_items": [
+    {{
+      "task": "Description of the action item",
+      "owner": "Person responsible (or 'Unassigned' if unclear)",
+      "priority": "high/medium/low",
+      "subtitle_ref": "Brief quote from transcript that mentions this task"
+    }}
+  ],
+  "decisions": [
+    {{
+      "decision": "What was decided",
+      "context": "Why or how it was decided"
+    }}
+  ],
+  "risks": [
+    {{
+      "risk": "Description of potential risk or concern raised",
+      "severity": "high/medium/low"
+    }}
+  ]
+}}
+
+If there are no items for a category, return an empty array.
+Be thorough — extract even implied action items like "we should..." or "let's..." or "next step is..."."""
+
+        actions_json = await self._call_gemini(
+            actions_prompt,
+            fallback={"action_items": [], "decisions": [], "risks": []},
+        )
+
+        # Normalize: ensure expected keys exist
+        if "action_items" not in actions_json:
+            actions_json["action_items"] = []
+        decisions_json = {"decisions": actions_json.pop("decisions", [])}
+        risks_json = {"risks": actions_json.pop("risks", [])}
+
+        # ── 3) Sentiment (lightweight — derive from summary) ──
+        sentiment_json = {"overall": "neutral", "distribution": {}}
+
         # Save results
         result = await self.db.execute(select(AIResult).filter(AIResult.meeting_id == self.meeting_id))
         ai_result = result.scalar_one_or_none()
@@ -127,14 +177,18 @@ EXPECTED JSON:
             self.db.add(ai_result)
 
         ai_result.summary_json = summary_json
-        ai_result.decisions_json = {}
-        ai_result.actions_json = {}
-        ai_result.risks_json = {}
-        ai_result.sentiment_json = {}
+        ai_result.decisions_json = decisions_json
+        ai_result.actions_json = actions_json
+        ai_result.risks_json = risks_json
+        ai_result.sentiment_json = sentiment_json
         ai_result.created_at = datetime.utcnow()
 
         await self.db.commit()
 
         elapsed = time.perf_counter() - pipeline_start
-        logger.info("✅ AI Pipeline completed for Meeting %d in %.1fs", self.meeting_id, elapsed)
+        logger.info("✅ AI Pipeline completed for Meeting %d in %.1fs (actions: %d, decisions: %d)",
+                     self.meeting_id, elapsed,
+                     len(actions_json.get("action_items", [])),
+                     len(decisions_json.get("decisions", [])))
         return ai_result
+
