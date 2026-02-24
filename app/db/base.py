@@ -5,3 +5,4 @@ from app.models.task import Task  # noqa
 from app.models.participant import Participant  # noqa
 from app.models.subtitle import Subtitle  # noqa
 from app.models.ai_result import AIResult  # noqa
+from app.models.chat_message import ChatMessage  # noqa

@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import get_current_user
 from app.core.config import settings
 from app.db.session import get_db
+from app.core.security import sanitize_input
 from app.models.meeting import Meeting
 from app.models.ai_result import AIResult
 from app.models.task import Task
@@ -109,7 +110,7 @@ async def create_task(
 
     task = Task(
         meeting_id=payload.meeting_id,
-        title=payload.title,
+        title=sanitize_input(payload.title),
         status=payload.status,
         priority=payload.priority,
         owner=payload.owner,
@@ -169,6 +170,8 @@ async def update_task(
 
     updates = payload.model_dump(exclude_none=True)
     for key, value in updates.items():
+        if key == "title" and value:
+            value = sanitize_input(value)
         setattr(task, key, value)
 
     await db.commit()
@@ -241,12 +244,17 @@ async def batch_update_tasks(
 # ── GitHub Issue Export ──────────────────────────────────
 class GitHubExportRequest(BaseModel):
     repo: str
+    token: str | None = None
     task_ids: list[int] | None = None
 
 
 def _post_github_issue(url, headers, data):
     """Synchronous wrapper for requests.post to run in executor."""
-    return requests.post(url, headers=headers, json=data, timeout=15)
+    try:
+        return requests.post(url, headers=headers, json=data, timeout=15)
+    except Exception as e:
+        logger.error(f"GitHub request failed: {e}")
+        return None
 
 
 @router.post("/meetings/{meeting_id}/export-github")
@@ -265,8 +273,13 @@ async def export_to_github(
     if not meeting:
         raise HTTPException(status_code=404, detail="Meeting not found")
 
-    if not settings.github_token:
-        raise HTTPException(status_code=400, detail="GitHub token not configured.")
+    # Use payload token (user specific) or settings token (server global)
+    gh_token = payload.token or settings.github_token
+    if not gh_token:
+        raise HTTPException(status_code=400, detail="GitHub token not configured. Please add it in Settings.")
+
+    if not payload.repo or "/" not in payload.repo or payload.repo.startswith("http") or ".." in payload.repo:
+        raise HTTPException(status_code=400, detail="Invalid repository format. Use 'owner/repo'.")
 
     stmt = select(Task).filter(Task.meeting_id == meeting_id)
     if payload.task_ids:
@@ -279,7 +292,7 @@ async def export_to_github(
         raise HTTPException(status_code=400, detail="No tasks found to export.")
 
     headers = {
-        "Authorization": f"token {settings.github_token}",
+        "Authorization": f"token {gh_token}",
         "Accept": "application/vnd.github.v3+json",
     }
 

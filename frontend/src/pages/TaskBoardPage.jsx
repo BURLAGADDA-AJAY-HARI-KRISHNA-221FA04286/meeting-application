@@ -2,8 +2,8 @@ import { useEffect, useState, useCallback } from 'react';
 import { tasksAPI, meetingsAPI } from '../api';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-    CheckSquare, Circle, Loader, CheckCircle, ArrowRight,
-    ArrowLeft, User, Filter, AlertTriangle, Clock, Plus,
+    SquareCheck, Circle, Loader, CheckCircle, ArrowRight,
+    ArrowLeft, User, Filter, TriangleAlert, Clock, Plus,
     Trash2, Edit2, BarChart2, X, Save
 } from 'lucide-react';
 import toast from 'react-hot-toast';
@@ -156,7 +156,7 @@ export default function TaskBoardPage() {
                 </div>
                 <div className="task-header-actions">
                     <div className="view-toggle">
-                        <button className={`view-btn ${viewMode === 'kanban' ? 'active' : ''}`} onClick={() => setViewMode('kanban')}><CheckSquare size={16} /> Board</button>
+                        <button className={`view-btn ${viewMode === 'kanban' ? 'active' : ''}`} onClick={() => setViewMode('kanban')}><SquareCheck size={16} /> Board</button>
                         <button className={`view-btn ${viewMode === 'graph' ? 'active' : ''}`} onClick={() => setViewMode('graph')}><BarChart2 size={16} /> Time Graph</button>
                     </div>
                     <button className="btn btn-primary" onClick={() => openModal()}><Plus size={16} /> Add Task</button>

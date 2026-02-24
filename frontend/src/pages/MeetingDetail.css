@@ -447,3 +447,144 @@
         height: 400px;
     }
 }
+
+/* ── Summary Text ── */
+.ac-summary-text {
+    font-size: 0.875rem;
+    color: var(--text-secondary);
+    line-height: 1.8;
+    white-space: pre-wrap;
+}
+
+/* ── Analyze CTA Features ── */
+.analyze-features {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-top: 16px;
+    justify-content: center;
+}
+
+.analyze-feature {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 14px;
+    background: rgba(99, 102, 241, 0.06);
+    border: 1px solid rgba(99, 102, 241, 0.12);
+    border-radius: var(--radius-full);
+    color: var(--text-secondary);
+    font-size: 0.8rem;
+    font-weight: 500;
+}
+
+/* ── Action Items ── */
+.action-list {
+    gap: 0 !important;
+}
+
+.action-item {
+    display: flex !important;
+    align-items: flex-start;
+    gap: 12px !important;
+    padding: 12px 0 !important;
+    padding-left: 0 !important;
+    border-bottom: 1px solid rgba(99, 102, 241, 0.06);
+}
+
+.action-item::before {
+    display: none !important;
+}
+
+.action-checkbox {
+    color: var(--accent-primary);
+    margin-top: 2px;
+    flex-shrink: 0;
+}
+
+.action-content {
+    font-size: 0.875rem;
+    color: var(--text-secondary);
+    line-height: 1.6;
+}
+
+.action-deadline {
+    display: inline-block;
+    margin-left: 8px;
+    padding: 2px 8px;
+    background: rgba(245, 158, 11, 0.1);
+    border: 1px solid rgba(245, 158, 11, 0.2);
+    border-radius: 4px;
+    font-size: 0.7rem;
+    color: #f59e0b;
+    font-weight: 600;
+}
+
+/* ── Risk Mitigation ── */
+.risk-mitigation {
+    margin-top: 10px;
+    padding-top: 8px;
+    border-top: 1px solid rgba(255, 255, 255, 0.06);
+    font-size: 0.8rem;
+    color: var(--text-muted);
+    line-height: 1.5;
+}
+
+/* ── Sentiment Reasoning ── */
+.sent-reasoning {
+    margin-top: 10px;
+    font-size: 0.8rem;
+    color: var(--text-muted);
+    font-style: italic;
+    line-height: 1.5;
+}
+
+/* ── RAG Evidence Citations ── */
+.chat-evidence {
+    margin-top: 8px;
+    padding: 10px 14px;
+    background: rgba(99, 102, 241, 0.04);
+    border: 1px solid rgba(99, 102, 241, 0.1);
+    border-radius: var(--radius-md);
+}
+
+.chat-evidence-title {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.7rem;
+    font-weight: 700;
+    color: var(--accent-primary);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-bottom: 8px;
+}
+
+.chat-evidence-item {
+    padding: 6px 0;
+    font-size: 0.8rem;
+    color: var(--text-muted);
+    line-height: 1.5;
+    border-bottom: 1px solid rgba(99, 102, 241, 0.06);
+}
+
+.chat-evidence-item:last-child {
+    border-bottom: none;
+}
+
+.chat-evidence-speaker {
+    font-weight: 600;
+    color: var(--text-secondary);
+    margin-right: 4px;
+}
+
+.chat-evidence-text {
+    font-style: italic;
+}
+
+/* ── Badge info variant ── */
+.badge-info {
+    background: rgba(59, 130, 246, 0.1);
+    color: #60a5fa;
+    border: 1px solid rgba(59, 130, 246, 0.2);
+}

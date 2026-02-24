@@ -2,7 +2,7 @@ import axios from 'axios';
 
 const API_BASE = 'http://localhost:8000/api/v1';
 
-const api = axios.create({
+export const api = axios.create({
     baseURL: API_BASE,
     headers: { 'Content-Type': 'application/json' },
 });
@@ -61,11 +61,21 @@ export const meetingsAPI = {
     update: (id, data) => api.patch(`/meetings/${id}`, data),
     delete: (id) => api.delete(`/meetings/${id}`),
     dashboard: () => api.get('/meetings/dashboard'),
+    uploadMedia: (file, title = '', autoAnalyze = true) => {
+        const formData = new FormData();
+        formData.append('file', file);
+        formData.append('title', title);
+        formData.append('auto_analyze', autoAnalyze);
+        return api.post('/meetings/upload-media', formData, {
+            headers: { 'Content-Type': 'multipart/form-data' },
+            timeout: 300000, // 5 min timeout for large files
+        });
+    },
 };
 
 // ── AI ──
 export const aiAPI = {
-    analyze: (meetingId) => api.post(`/ai/${meetingId}/analyze`),
+    analyze: (meetingId, force = false) => api.post(`/ai/${meetingId}/analyze?force=${force}`),
     getResults: (meetingId) => api.get(`/ai/${meetingId}/results`),
     ragQuery: (meetingId, question) => api.post(`/ai/${meetingId}/rag-query`, { question }),
 };
@@ -81,8 +91,8 @@ export const tasksAPI = {
 
 // ── GitHub Export ──
 export const githubAPI = {
-    exportTasks: (meetingId, repo, taskIds = null) =>
-        api.post(`/meetings/${meetingId}/export-github`, { repo, task_ids: taskIds }),
+    exportTasks: (meetingId, repo, taskIds = null, token = null) =>
+        api.post(`/meetings/${meetingId}/export-github`, { repo, task_ids: taskIds, token }),
 };
 
 // ── WebSocket helper ──
@@ -95,13 +105,15 @@ export function createMeetingWebSocket(meetingId) {
 // ── Video Meeting ──
 export const videoMeetingAPI = {
     createRoom: (title) => api.post('/video-meeting/create', null, { params: { title } }),
+    joinRoom: (meeting_code, password) => api.post('/video-meeting/join', { meeting_code, password }),
     getRoomInfo: (roomId) => api.get(`/video-meeting/${roomId}/info`),
+    saveTranscript: (roomId, data) => api.post(`/video-meeting/${roomId}/save-transcript`, data),
 };
 
 export function createVideoMeetingWebSocket(roomId, userId, displayName) {
     const wsBase = API_BASE.replace('http', 'ws');
     const params = new URLSearchParams({ user_id: userId, display_name: displayName });
-    return new WebSocket(`${wsBase}/ws/video-meeting/${roomId}?${params}`);
+    return new WebSocket(`${wsBase}/video-meeting/ws/${roomId}?${params}`);
 }
 
 export default api;

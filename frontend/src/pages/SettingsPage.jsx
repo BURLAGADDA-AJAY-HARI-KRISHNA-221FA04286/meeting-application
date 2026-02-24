@@ -1,10 +1,11 @@
 import { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { authAPI } from '../api';
+import { authAPI, api } from '../api';
+
 import { motion } from 'framer-motion';
 import {
     User, Lock, Keyboard, Info, Save, Eye, EyeOff,
-    Settings, Shield, Zap, Brain
+    Settings, Shield, Zap, Github
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import './Settings.css';
@@ -195,8 +196,66 @@ export default function SettingsPage() {
                     </div>
                 </motion.div>
 
-                {/* ── About ── */}
+                {/* ── Integrations ── */}
                 <motion.div className="card settings-card" {...fadeUp} transition={{ delay: 0.2 }}>
+                    <h3><Github size={18} /> Integrations</h3>
+                    <p>Connect with external services</p>
+                    <div className="input-group">
+                        <label className="input-label" htmlFor="gh-token">GitHub Personal Access Token (PAT)</label>
+                        <input
+                            id="gh-token"
+                            className="input"
+                            type="password"
+                            placeholder="ghp_xxxxxxxxxxxx"
+                            value={localStorage.getItem('github_token') || ''}
+                            onChange={(e) => {
+                                localStorage.setItem('github_token', e.target.value);
+                                // Force re-render not strictly needed if we read from LS on mount, but good for UX feedback
+                                window.location.reload();
+                            }}
+                        />
+                        <small style={{ color: 'var(--text-muted)', fontSize: '0.75rem', marginTop: 4 }}>
+                            Required to export tasks as issues. Token is stored locally in your browser.
+                        </small>
+                    </div>
+                    {localStorage.getItem('github_token') && (
+                        <div style={{ marginBottom: 16 }}>
+                            <button
+                                className="btn btn-sm btn-secondary"
+                                onClick={async () => {
+                                    const token = localStorage.getItem('github_token');
+                                    if (!token) return;
+                                    const toastId = toast.loading('Verifying token...');
+                                    try {
+                                        const res = await api.post('/integrations/github/test', { token });
+                                        if (res.data.valid) {
+                                            toast.success(res.data.message, { id: toastId });
+                                        } else {
+                                            toast.error(res.data.message, { id: toastId });
+                                        }
+                                    } catch (e) {
+                                        toast.error('Verification failed', { id: toastId });
+                                    }
+                                }}
+                            >
+                                <Zap size={14} /> Verify Token
+                            </button>
+                        </div>
+                    )}
+                    <div className="input-group">
+                        <label className="input-label" htmlFor="gh-repo">Default Repository (optional)</label>
+                        <input
+                            id="gh-repo"
+                            className="input"
+                            placeholder="username/repo-name"
+                            value={localStorage.getItem('github_repo') || ''}
+                            onChange={(e) => localStorage.setItem('github_repo', e.target.value)}
+                        />
+                    </div>
+                </motion.div>
+
+                {/* ── About ── */}
+                <motion.div className="card settings-card" {...fadeUp} transition={{ delay: 0.25 }}>
                     <h3><Info size={18} /> About MeetingAI</h3>
                     <p>Application information</p>
                     <div className="about-info">

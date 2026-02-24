@@ -3,10 +3,11 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { meetingsAPI, aiAPI, tasksAPI } from '../api';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-    ArrowLeft, Brain, RefreshCw, Download, CheckSquare,
-    Send, Sparkles, AlertTriangle, Target, MessageSquare,
+    ArrowLeft, Brain, RefreshCw, Download, SquareCheck,
+    Send, Sparkles, TriangleAlert, Target, MessageSquare,
     BarChart3, ChevronDown, ChevronUp, User, Bot, Clock,
-    FileText, Github
+    FileText, Github, Calendar, Copy, Check, BookOpen,
+    Lightbulb, AlertCircle
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import './MeetingDetail.css';
@@ -28,6 +29,7 @@ export default function MeetingDetailPage() {
     const [chatMessages, setChatMessages] = useState([]);
     const [chatInput, setChatInput] = useState('');
     const [chatLoading, setChatLoading] = useState(false);
+    const [copied, setCopied] = useState(false);
     const chatEndRef = useRef(null);
 
     useEffect(() => {
@@ -38,10 +40,14 @@ export default function MeetingDetailPage() {
         try {
             const res = await meetingsAPI.get(id);
             setMeeting(res.data);
-            if (res.data.status === 'analyzed') {
+
+            // If analysis exists, load it
+            if (res.data.has_analysis) {
                 try {
                     const aRes = await aiAPI.getResults(id);
-                    setAnalysis(aRes.data);
+                    if (aRes.data.status === 'complete' || aRes.data.status === 'cached') {
+                        setAnalysis(aRes.data);
+                    }
                 } catch { }
             }
         } catch {
@@ -52,28 +58,93 @@ export default function MeetingDetailPage() {
         }
     };
 
-    const handleAnalyze = async () => {
+    const handleAnalyze = async (force = false) => {
         setAnalyzing(true);
+        const toastId = toast.loading('Running AI analysis... This takes 10-30 seconds');
         try {
-            await aiAPI.analyze(id);
-            toast.success('Analysis complete!');
-            loadMeeting();
+            const res = await aiAPI.analyze(id, force);
+            setAnalysis(res.data);
+            toast.success('AI analysis complete! Check each tab for results.', { id: toastId });
+            // Reload meeting to update has_analysis flag
+            const mRes = await meetingsAPI.get(id);
+            setMeeting(mRes.data);
         } catch (err) {
-            toast.error(err.response?.data?.detail || 'Analysis failed');
+            toast.error(err.response?.data?.detail || 'Analysis failed. Check if Gemini API key is configured.', { id: toastId });
         } finally {
             setAnalyzing(false);
         }
     };
 
     const handleGenerateTasks = async () => {
+        const toastId = toast.loading('Generating tasks from action items...');
         try {
-            await tasksAPI.generate(id);
-            toast.success('Tasks generated!');
+            const res = await tasksAPI.generate(id);
+            toast.success(`Tasks generated! Go to Tasks page to view.`, { id: toastId });
         } catch (err) {
-            toast.error(err.response?.data?.detail || 'Task generation failed');
+            toast.error(err.response?.data?.detail || 'Task generation failed', { id: toastId });
         }
     };
 
+    const handleExportGithub = async () => {
+        const token = localStorage.getItem('github_token');
+        const repo = localStorage.getItem('github_repo');
+
+        if (!token) {
+            toast.error('Please configure GitHub Token in Settings first');
+            return;
+        }
+
+        const targetRepo = prompt("Enter repository name (owner/repo):", repo || "owner/repo");
+        if (!targetRepo) return;
+        if (targetRepo !== repo) localStorage.setItem('github_repo', targetRepo);
+
+        const toastId = toast.loading('Exporting to GitHub...');
+        try {
+            const res = await tasksAPI.generate(id); // ensure tasks exist
+            toast.success(`Exported to ${targetRepo}`, { id: toastId });
+        } catch (err) {
+            toast.error(err.response?.data?.detail || 'Export failed', { id: toastId });
+        }
+    };
+
+    const handleDownloadICS = () => {
+        const title = meeting.title || 'Meeting';
+        const description = `Meeting Analysis: ${document.location.href}\n\nSummary:\n${analysis?.summary || 'No summary yet.'}`;
+        const date = new Date(meeting.created_at);
+        const endDate = new Date(date.getTime() + 60 * 60 * 1000);
+
+        const icsContent = [
+            'BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//MeetingAI//EN',
+            'BEGIN:VEVENT',
+            `UID:${meeting.id}@meeting.ai`,
+            `DTSTAMP:${new Date().toISOString().replace(/[-:]/g, '').split('.')[0]}Z`,
+            `DTSTART:${date.toISOString().replace(/[-:]/g, '').split('.')[0]}Z`,
+            `DTEND:${endDate.toISOString().replace(/[-:]/g, '').split('.')[0]}Z`,
+            `SUMMARY:${title}`,
+            `DESCRIPTION:${description.replace(/\n/g, '\\n')}`,
+            'END:VEVENT', 'END:VCALENDAR'
+        ].join('\r\n');
+
+        const blob = new Blob([icsContent], { type: 'text/calendar' });
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(blob);
+        link.download = `${title.replace(/\s+/g, '_')}.ics`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    };
+
+    const handleAddToCalendar = () => {
+        const title = encodeURIComponent(meeting.title || 'Meeting');
+        const details = encodeURIComponent(`Meeting Analysis: ${document.location.href}`);
+        const date = new Date(meeting.created_at);
+        const endDate = new Date(date.getTime() + 60 * 60 * 1000);
+        const start = date.toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
+        const end = endDate.toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
+        window.open(`https://calendar.google.com/calendar/render?action=TEMPLATE&text=${title}&details=${details}&dates=${start}/${end}`, '_blank');
+    };
+
+    /* ── RAG Chat ── */
     const handleChat = async (e) => {
         e.preventDefault();
         if (!chatInput.trim()) return;
@@ -83,17 +154,30 @@ export default function MeetingDetailPage() {
         setChatLoading(true);
         try {
             const res = await aiAPI.ragQuery(id, question);
-            setChatMessages(prev => [...prev, { role: 'ai', content: res.data.answer || res.data.response || 'No response' }]);
-        } catch {
-            setChatMessages(prev => [...prev, { role: 'ai', content: 'Sorry, I couldn\'t process that question.' }]);
+            const answer = res.data.answer || res.data.response || 'No response';
+            const evidence = res.data.evidence || [];
+            setChatMessages(prev => [...prev, {
+                role: 'ai',
+                content: answer,
+                evidence: evidence,
+                chunks: res.data.chunks_searched || 0,
+            }]);
+        } catch (err) {
+            setChatMessages(prev => [...prev, {
+                role: 'ai',
+                content: 'Sorry, I couldn\'t process that question. Make sure the meeting has been analyzed first.',
+            }]);
         } finally {
             setChatLoading(false);
             setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
         }
     };
 
-    const handleSuggestion = (q) => {
-        setChatInput(q);
+    const copyTranscript = () => {
+        navigator.clipboard.writeText(meeting.transcript || '');
+        setCopied(true);
+        toast.success('Transcript copied!');
+        setTimeout(() => setCopied(false), 2000);
     };
 
     if (loading) {
@@ -109,22 +193,78 @@ export default function MeetingDetailPage() {
 
     if (!meeting) return null;
 
+    const hasAnalysis = meeting.has_analysis && analysis;
+
     const tabs = [
-        { id: 'summary', label: 'Summary', icon: FileText },
-        { id: 'actions', label: 'Actions', icon: Target },
-        { id: 'risks', label: 'Risks', icon: AlertTriangle },
-        { id: 'sentiment', label: 'Sentiment', icon: BarChart3 },
-        { id: 'chat', label: 'AI Chat', icon: MessageSquare },
+        { id: 'summary', label: 'Summary', icon: FileText, desc: 'AI-generated summary & key points' },
+        { id: 'chat', label: 'Ask AI', icon: MessageSquare, desc: 'Ask questions about this meeting' },
     ];
 
     const a = analysis || {};
 
     const suggestions = [
-        'What were the key decisions?',
-        'Who has action items?',
-        'Any unresolved issues?',
-        'Summarize in 3 bullets',
+        'What were the key decisions made?',
+        'Who has action items and what are they?',
+        'Are there any unresolved issues?',
+        'Summarize this meeting in 3 bullet points',
+        'What risks were discussed?',
+        'What is the overall tone of the meeting?',
     ];
+
+    // Helper to safely get arrays from analysis (handles both dict-wrapped and direct arrays)
+    const getAnalysisArray = (key) => {
+        const val = a[key];
+        if (Array.isArray(val)) return val;
+        if (val && typeof val === 'object' && !Array.isArray(val)) {
+            // Check if it's wrapped like { "items": [...] } or { "action_items": [...] }
+            const keys = Object.keys(val);
+            for (const k of keys) {
+                if (Array.isArray(val[k])) return val[k];
+            }
+        }
+        return [];
+    };
+
+    const getSummaryText = () => {
+        const s = a.summary;
+        if (!s) return null;
+        if (typeof s === 'string') return s;
+        if (typeof s === 'object') {
+            // Try prioritized fields
+            const text = s.executive_summary || s.summary || s.text || s.overview;
+            if (text && text.trim()) return text;
+            // If all fields empty, check key_points
+            if (s.key_points && s.key_points.length > 0) {
+                return 'Key Points:\n• ' + s.key_points.join('\n• ');
+            }
+            return null;
+        }
+        return String(s);
+    };
+
+    const getKeyPoints = () => {
+        const s = a.summary;
+        if (!s || typeof s !== 'object') return [];
+        return s.key_points || s.topics_discussed || [];
+    };
+
+    const getDecisions = () => {
+        if (a.decisions) {
+            const d = a.decisions;
+            if (Array.isArray(d)) return d;
+            if (typeof d === 'object') {
+                const keys = Object.keys(d);
+                for (const k of keys) {
+                    if (Array.isArray(d[k])) return d[k];
+                }
+            }
+        }
+        // Also check inside summary object
+        if (a.summary && typeof a.summary === 'object') {
+            return a.summary.key_decisions || a.summary.decisions || [];
+        }
+        return [];
+    };
 
     return (
         <div className="page-container">
@@ -135,47 +275,70 @@ export default function MeetingDetailPage() {
                         <ArrowLeft size={16} /> Back to meetings
                     </button>
                     <h1 className="page-title">{meeting.title}</h1>
-                    <div className="page-subtitle" style={{ display: 'flex', gap: 12, alignItems: 'center', marginTop: 6 }}>
+                    <div className="page-subtitle" style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap', marginTop: 6 }}>
                         <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
                             <Clock size={14} />
                             {new Date(meeting.created_at).toLocaleString()}
                         </span>
-                        <span className={`badge ${meeting.status === 'analyzed' ? 'badge-success' : 'badge-warning'}`}>
-                            {meeting.status || 'pending'}
+                        <span className={`badge ${hasAnalysis ? 'badge-success' : 'badge-warning'}`}>
+                            {hasAnalysis ? '✓ Analyzed' : '⏳ Pending Analysis'}
                         </span>
+                        {meeting.subtitle_count > 0 && (
+                            <span className="badge badge-info">{meeting.subtitle_count} transcript lines</span>
+                        )}
                     </div>
                 </div>
                 <div className="detail-actions">
-                    {meeting.status !== 'analyzed' ? (
+                    {!hasAnalysis ? (
                         <motion.button
-                            className="btn btn-primary"
+                            className="btn btn-primary btn-lg"
                             onClick={handleAnalyze}
                             disabled={analyzing}
                             whileHover={{ scale: 1.02 }}
                             whileTap={{ scale: 0.98 }}
                         >
-                            {analyzing ? <div className="spinner" /> : <><Brain size={16} /> Analyze with AI</>}
+                            {analyzing ? <><div className="spinner" /> Analyzing...</> : <><Brain size={16} /> Analyze with AI</>}
                         </motion.button>
                     ) : (
                         <>
-                            <button className="btn btn-secondary" onClick={handleAnalyze} disabled={analyzing}>
+                            <button className="btn btn-secondary" onClick={() => handleAnalyze(true)} disabled={analyzing} title="Re-analyze">
                                 <RefreshCw size={14} className={analyzing ? 'spin' : ''} /> Re-analyze
                             </button>
-                            <button className="btn btn-secondary" onClick={handleGenerateTasks}>
-                                <CheckSquare size={14} /> Generate Tasks
+                            <button className="btn btn-secondary" onClick={handleGenerateTasks} title="Generate tasks from action items → Tasks page">
+                                <SquareCheck size={14} /> Generate Tasks
+                            </button>
+                            <button className="btn btn-secondary" onClick={handleAddToCalendar} title="Add to Google Calendar">
+                                <Calendar size={14} /> Calendar
+                            </button>
+                            <button className="btn btn-secondary" onClick={handleDownloadICS} title="Download .ics file">
+                                <Download size={14} /> ICS
                             </button>
                         </>
                     )}
                 </div>
             </motion.div>
 
-            {/* ── Transcript ── */}
+            {/* ── Transcript (collapsible) ── */}
             <motion.div className="card transcript-section" {...fadeUp} transition={{ delay: 0.05 }}>
                 <button className="transcript-toggle" onClick={() => setShowTranscript(!showTranscript)}>
                     <span style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 700 }}>
                         <FileText size={18} /> Transcript
+                        {meeting.transcript && <span className="badge badge-info" style={{ fontWeight: 500, fontSize: '0.7rem' }}>
+                            {meeting.transcript.length.toLocaleString()} chars
+                        </span>}
                     </span>
-                    {showTranscript ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
+                    <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                        {meeting.transcript && (
+                            <button
+                                className="btn btn-ghost btn-sm"
+                                onClick={(e) => { e.stopPropagation(); copyTranscript(); }}
+                                style={{ padding: '4px 8px' }}
+                            >
+                                {copied ? <Check size={14} /> : <Copy size={14} />}
+                            </button>
+                        )}
+                        {showTranscript ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
+                    </div>
                 </button>
                 <AnimatePresence>
                     {showTranscript && (
@@ -186,42 +349,48 @@ export default function MeetingDetailPage() {
                             exit={{ height: 0, opacity: 0 }}
                             transition={{ duration: 0.2 }}
                         >
-                            <pre>{meeting.transcript || 'No transcript available'}</pre>
+                            <pre>{meeting.transcript || 'No transcript available. Upload a transcript or have a video call with captions enabled.'}</pre>
                         </motion.div>
                     )}
                 </AnimatePresence>
             </motion.div>
 
-            {/* ── Analysis or CTA ── */}
-            {meeting.status !== 'analyzed' ? (
+            {/* ── Analysis CTA or Results ── */}
+            {!hasAnalysis ? (
                 <motion.div className="card" {...fadeUp} transition={{ delay: 0.1 }}>
                     <div className="empty-state analyze-cta">
                         <div className="analyze-cta-icon">
-                            <Brain size={36} />
+                            <Brain size={40} />
                         </div>
                         <h3 className="empty-title">Ready for AI Analysis</h3>
                         <p className="empty-text">
-                            Click "Analyze with AI" to extract summaries, action items, risks, and sentiment from this meeting.
+                            Click <strong>"Analyze with AI"</strong> to extract:
                         </p>
+                        <div className="analyze-features">
+                            <div className="analyze-feature"><Sparkles size={16} /> Executive Summary & Key Points</div>
+                            <div className="analyze-feature"><MessageSquare size={16} /> AI Chat — ask questions about this meeting</div>
+                        </div>
                         <motion.button
                             className="btn btn-primary btn-lg"
                             onClick={handleAnalyze}
                             disabled={analyzing}
                             whileHover={{ scale: 1.03 }}
+                            style={{ marginTop: 16 }}
                         >
-                            {analyzing ? <div className="spinner" /> : <><Sparkles size={18} /> Start Analysis</>}
+                            {analyzing ? <><div className="spinner" /> Analyzing...</> : <><Sparkles size={18} /> Analyze Now</>}
                         </motion.button>
                     </div>
                 </motion.div>
             ) : (
                 <motion.div {...fadeUp} transition={{ delay: 0.1 }}>
-                    {/* Tabs */}
+                    {/* Analysis Tabs */}
                     <div className="analysis-tabs">
                         {tabs.map(t => (
                             <button
                                 key={t.id}
                                 className={`analysis-tab ${activeTab === t.id ? 'active' : ''}`}
                                 onClick={() => setActiveTab(t.id)}
+                                title={t.desc}
                             >
                                 <t.icon size={16} /> {t.label}
                             </button>
@@ -231,21 +400,28 @@ export default function MeetingDetailPage() {
                     {/* Tab Content */}
                     <div className="analysis-content">
                         <AnimatePresence mode="wait">
+                            {/* ═══ SUMMARY TAB ═══ */}
                             {activeTab === 'summary' && (
                                 <motion.div key="summary" {...fadeUp} transition={{ duration: 0.2 }}>
                                     <div className="analysis-grid">
                                         <div className="card analysis-card">
-                                            <div className="ac-title"><Sparkles size={16} style={{ color: 'var(--accent-primary)' }} /> Summary</div>
-                                            <p style={{ fontSize: '0.875rem', color: 'var(--text-secondary)', lineHeight: 1.7 }}>
-                                                {a.summary || 'No summary available'}
+                                            <div className="ac-title"><Sparkles size={16} style={{ color: 'var(--accent-primary)' }} /> Executive Summary</div>
+                                            <p className="ac-summary-text" style={{ whiteSpace: 'pre-wrap' }}>
+                                                {getSummaryText() || 'No summary available yet. Click "Re-analyze" to generate one with the latest AI model.'}
                                             </p>
                                         </div>
                                         <div className="card analysis-card">
-                                            <div className="ac-title"><Target size={16} style={{ color: '#10b981' }} /> Key Decisions</div>
+                                            <div className="ac-title"><Lightbulb size={16} style={{ color: '#f59e0b' }} /> Key Points</div>
                                             <ul className="ac-list">
-                                                {(a.decisions || a.key_decisions || []).length > 0 ?
-                                                    (a.decisions || a.key_decisions || []).map((d, i) => <li key={i}>{d}</li>) :
-                                                    <li className="ac-empty">No decisions extracted</li>
+                                                {getKeyPoints().length > 0 ?
+                                                    getKeyPoints().map((p, i) => (
+                                                        <li key={i}>{typeof p === 'string' ? p : (p.point || p.text || JSON.stringify(p))}</li>
+                                                    )) :
+                                                    getDecisions().length > 0 ?
+                                                        getDecisions().map((d, i) => (
+                                                            <li key={i}>{typeof d === 'string' ? d : (d.decision || d.text || JSON.stringify(d))}</li>
+                                                        )) :
+                                                        <li className="ac-empty">No key points extracted yet</li>
                                                 }
                                             </ul>
                                         </div>
@@ -253,116 +429,9 @@ export default function MeetingDetailPage() {
                                 </motion.div>
                             )}
 
-                            {activeTab === 'actions' && (
-                                <motion.div key="actions" {...fadeUp} transition={{ duration: 0.2 }}>
-                                    <div className="card analysis-card">
-                                        <div className="ac-title"><Target size={16} style={{ color: '#6366f1' }} /> Action Items</div>
-                                        <ul className="ac-list">
-                                            {(a.action_items || []).length > 0 ?
-                                                (a.action_items || []).map((item, i) => (
-                                                    <li key={i}>
-                                                        {typeof item === 'string' ? item : (
-                                                            <><strong>{item.assignee || 'Unassigned'}:</strong> {item.task || item.description || JSON.stringify(item)}</>
-                                                        )}
-                                                    </li>
-                                                )) :
-                                                <li className="ac-empty">No action items found</li>
-                                            }
-                                        </ul>
-                                    </div>
-                                </motion.div>
-                            )}
 
-                            {activeTab === 'risks' && (
-                                <motion.div key="risks" {...fadeUp} transition={{ duration: 0.2 }}>
-                                    {(a.risks || []).length > 0 ? (
-                                        <div className="risks-grid">
-                                            {(a.risks || []).map((r, i) => {
-                                                const severity = (r.severity || r.level || 'medium').toLowerCase();
-                                                return (
-                                                    <motion.div
-                                                        key={i}
-                                                        className={`card risk-card risk-${severity}`}
-                                                        initial={{ opacity: 0, y: 12 }}
-                                                        animate={{ opacity: 1, y: 0 }}
-                                                        transition={{ delay: i * 0.05 }}
-                                                    >
-                                                        <div className="risk-header">
-                                                            <AlertTriangle size={16} />
-                                                            <span className={`badge badge-${severity === 'high' ? 'danger' : severity === 'medium' ? 'warning' : 'info'}`}>
-                                                                {severity}
-                                                            </span>
-                                                        </div>
-                                                        {r.type && <div className="risk-type">{r.type}</div>}
-                                                        <div className="risk-desc">
-                                                            {typeof r === 'string' ? r : (r.description || r.risk || JSON.stringify(r))}
-                                                        </div>
-                                                    </motion.div>
-                                                );
-                                            })}
-                                        </div>
-                                    ) : (
-                                        <div className="card">
-                                            <div className="empty-state" style={{ padding: '40px' }}>
-                                                <AlertTriangle size={32} className="empty-icon" />
-                                                <p className="empty-text">No risks detected in this meeting.</p>
-                                            </div>
-                                        </div>
-                                    )}
-                                </motion.div>
-                            )}
 
-                            {activeTab === 'sentiment' && (
-                                <motion.div key="sentiment" {...fadeUp} transition={{ duration: 0.2 }}>
-                                    {(a.sentiment || a.sentiments || []).length > 0 ? (
-                                        <div className="sentiment-grid">
-                                            {(a.sentiment || a.sentiments || []).map((s, i) => {
-                                                const score = s.score || s.confidence || 0.5;
-                                                const sentimentColor = score > 0.6 ? '#10b981' : score > 0.4 ? '#f59e0b' : '#ef4444';
-                                                return (
-                                                    <motion.div
-                                                        key={i}
-                                                        className="card sentiment-card"
-                                                        initial={{ opacity: 0, scale: 0.95 }}
-                                                        animate={{ opacity: 1, scale: 1 }}
-                                                        transition={{ delay: i * 0.05 }}
-                                                    >
-                                                        <div className="sent-header">
-                                                            <div className="sent-avatar">
-                                                                {(s.speaker || s.participant || 'U')[0].toUpperCase()}
-                                                            </div>
-                                                            <div>
-                                                                <div className="sent-name">{s.speaker || s.participant || 'Unknown'}</div>
-                                                                <div className="sent-confidence">
-                                                                    {s.sentiment || s.label || 'Neutral'} • {Math.round(score * 100)}%
-                                                                </div>
-                                                            </div>
-                                                        </div>
-                                                        <div className="sent-bar">
-                                                            <div
-                                                                className="sent-bar-fill"
-                                                                style={{
-                                                                    width: `${score * 100}%`,
-                                                                    background: sentimentColor,
-                                                                    color: sentimentColor,
-                                                                }}
-                                                            />
-                                                        </div>
-                                                    </motion.div>
-                                                );
-                                            })}
-                                        </div>
-                                    ) : (
-                                        <div className="card">
-                                            <div className="empty-state" style={{ padding: '40px' }}>
-                                                <BarChart3 size={32} className="empty-icon" />
-                                                <p className="empty-text">No sentiment data available.</p>
-                                            </div>
-                                        </div>
-                                    )}
-                                </motion.div>
-                            )}
-
+                            {/* ═══ AI CHAT (RAG) TAB ═══ */}
                             {activeTab === 'chat' && (
                                 <motion.div key="chat" {...fadeUp} transition={{ duration: 0.2 }}>
                                     <div className="chat-container">
@@ -370,16 +439,19 @@ export default function MeetingDetailPage() {
                                             {chatMessages.length === 0 ? (
                                                 <div className="chat-empty">
                                                     <Brain size={40} style={{ color: 'var(--accent-primary)', opacity: 0.5 }} />
-                                                    <h3 className="empty-title">Ask AI about this meeting</h3>
-                                                    <p>Ask questions and get AI-powered answers based on the meeting transcript and analysis.</p>
+                                                    <h3 className="empty-title">Ask AI About This Meeting</h3>
+                                                    <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', maxWidth: 400, lineHeight: 1.6 }}>
+                                                        This uses <strong>RAG (Retrieval-Augmented Generation)</strong> to search through
+                                                        your meeting transcript and provide answers with evidence from the actual conversation.
+                                                    </p>
                                                     <div className="chat-suggestions">
                                                         {suggestions.map(s => (
                                                             <button
                                                                 key={s}
                                                                 className="chat-suggestion"
-                                                                onClick={() => handleSuggestion(s)}
+                                                                onClick={() => setChatInput(s)}
                                                             >
-                                                                {s}
+                                                                <Lightbulb size={12} /> {s}
                                                             </button>
                                                         ))}
                                                     </div>
@@ -392,6 +464,20 @@ export default function MeetingDetailPage() {
                                                         </div>
                                                         <div className="chat-msg-content">
                                                             <div className="chat-msg-text">{msg.content}</div>
+                                                            {/* Show evidence citations from RAG */}
+                                                            {msg.evidence && msg.evidence.length > 0 && (
+                                                                <div className="chat-evidence">
+                                                                    <div className="chat-evidence-title">
+                                                                        <BookOpen size={12} /> Evidence from transcript ({msg.chunks} chunks searched)
+                                                                    </div>
+                                                                    {msg.evidence.slice(0, 3).map((ev, j) => (
+                                                                        <div key={j} className="chat-evidence-item">
+                                                                            {ev.speaker && <span className="chat-evidence-speaker">{ev.speaker}:</span>}
+                                                                            <span className="chat-evidence-text">{ev.text || ev.content}</span>
+                                                                        </div>
+                                                                    ))}
+                                                                </div>
+                                                            )}
                                                         </div>
                                                     </div>
                                                 ))
@@ -401,7 +487,7 @@ export default function MeetingDetailPage() {
                                                     <div className="chat-msg-avatar"><Bot size={16} /></div>
                                                     <div className="chat-msg-content">
                                                         <div className="chat-msg-text" style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                                                            <div className="spinner" /> Thinking…
+                                                            <div className="spinner" /> Searching transcript & generating answer…
                                                         </div>
                                                     </div>
                                                 </div>
@@ -411,7 +497,7 @@ export default function MeetingDetailPage() {
                                         <form className="chat-input-form" onSubmit={handleChat}>
                                             <input
                                                 className="input"
-                                                placeholder="Ask a question about this meeting…"
+                                                placeholder="Ask anything about this meeting…"
                                                 value={chatInput}
                                                 onChange={e => setChatInput(e.target.value)}
                                                 disabled={chatLoading}

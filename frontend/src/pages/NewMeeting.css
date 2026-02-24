@@ -1,5 +1,5 @@
 /* ═══════════════════════════════════════════════════════
-   New Meeting — Form, Mode Selector
+   New Meeting — Start / Join + Video Upload
    ═══════════════════════════════════════════════════════ */
 
 .new-meeting-form {
@@ -11,11 +11,11 @@
     padding: 36px;
 }
 
-/* ── Mode Selector ── */
+/* ── Mode Selector (2 tabs) ── */
 .nm-mode-selector {
     display: grid;
     grid-template-columns: 1fr 1fr;
-    gap: 12px;
+    gap: 10px;
     margin-bottom: 28px;
 }
 
@@ -23,14 +23,14 @@
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 10px;
-    padding: 24px 16px;
+    gap: 8px;
+    padding: 22px 16px;
     background: rgba(15, 20, 42, 0.4);
     border: 1px solid var(--border-secondary);
     border-radius: var(--radius-lg);
     color: var(--text-secondary);
     font-family: inherit;
-    font-size: 0.9375rem;
+    font-size: 0.9rem;
     font-weight: 600;
     cursor: pointer;
     transition: all var(--transition-base);
@@ -66,40 +66,146 @@
     opacity: 1;
 }
 
-/* ── Live Meeting Info ── */
-.live-meeting-info {
+/* ── Info Card ── */
+.nm-info-card {
     display: flex;
-    gap: 16px;
-    padding: 20px;
+    gap: 14px;
+    padding: 16px 18px;
     background: rgba(99, 102, 241, 0.04);
     border: 1px solid rgba(99, 102, 241, 0.1);
     border-radius: var(--radius-lg);
-    margin-bottom: 20px;
+    margin: 16px 0 8px;
 }
 
-.live-meeting-info .info-icon {
-    width: 48px;
-    height: 48px;
-    border-radius: var(--radius-md);
-    background: rgba(99, 102, 241, 0.1);
-    display: flex;
-    align-items: center;
-    justify-content: center;
+.nm-info-icon {
     color: var(--accent-primary);
     flex-shrink: 0;
+    margin-top: 2px;
 }
 
-.live-meeting-info h4 {
-    font-size: 0.9375rem;
-    font-weight: 700;
+.nm-info-card strong {
+    font-size: 0.875rem;
     color: var(--text-primary);
+    display: block;
     margin-bottom: 4px;
 }
 
-.live-meeting-info p {
-    font-size: 0.8125rem;
+.nm-info-card p {
+    font-size: 0.8rem;
     color: var(--text-muted);
     line-height: 1.5;
+    margin: 0;
+}
+
+/* ── Created Room Credentials ── */
+.nm-created-section {
+    animation: fadeIn 0.3s ease-out;
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(8px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.nm-created-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 16px;
+    background: rgba(16, 185, 129, 0.1);
+    border: 1px solid rgba(16, 185, 129, 0.2);
+    border-radius: 20px;
+    color: #10b981;
+    font-size: 0.875rem;
+    font-weight: 600;
+    margin-bottom: 20px;
+}
+
+.nm-credential-rows {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin-bottom: 16px;
+}
+
+.nm-credential-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 16px;
+    background: rgba(15, 20, 42, 0.5);
+    border: 1px solid var(--border-secondary);
+    border-radius: var(--radius-md);
+}
+
+.nm-credential-label {
+    font-size: 0.8rem;
+    color: var(--text-muted);
+    font-weight: 500;
+}
+
+.nm-credential-value {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.nm-credential-value code {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 1rem;
+    font-weight: 700;
+    color: var(--text-primary);
+    letter-spacing: 0.05em;
+}
+
+.nm-copy-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    background: rgba(99, 102, 241, 0.1);
+    border: 1px solid rgba(99, 102, 241, 0.2);
+    border-radius: var(--radius-sm);
+    color: var(--accent-primary);
+    cursor: pointer;
+    transition: all 0.15s;
+    font-family: inherit;
+}
+
+.nm-copy-btn:hover {
+    background: rgba(99, 102, 241, 0.2);
+}
+
+.nm-copy-all {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    width: 100%;
+    padding: 10px;
+    background: rgba(99, 102, 241, 0.06);
+    border: 1px dashed rgba(99, 102, 241, 0.2);
+    border-radius: var(--radius-md);
+    color: var(--accent-primary);
+    font-size: 0.8125rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s;
+    font-family: inherit;
+    margin-bottom: 8px;
+}
+
+.nm-copy-all:hover {
+    background: rgba(99, 102, 241, 0.12);
+    border-color: rgba(99, 102, 241, 0.4);
 }
 
 /* ── Actions ── */
@@ -112,6 +218,150 @@
     border-top: 1px solid var(--border-secondary);
 }
 
+/* ═══ Video/Audio Upload Card ═══ */
+.nm-upload-card {
+    margin-top: 20px;
+    padding: 28px;
+}
+
+.nm-upload-header {
+    display: flex;
+    gap: 16px;
+    align-items: flex-start;
+    margin-bottom: 20px;
+}
+
+.nm-upload-icon {
+    width: 48px;
+    height: 48px;
+    border-radius: var(--radius-md);
+    background: linear-gradient(135deg, rgba(236, 72, 153, 0.12), rgba(99, 102, 241, 0.12));
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #ec4899;
+    flex-shrink: 0;
+}
+
+.nm-upload-header h3 {
+    font-size: 1rem;
+    font-weight: 700;
+    color: var(--text-primary);
+    margin-bottom: 4px;
+}
+
+.nm-upload-header p {
+    font-size: 0.8rem;
+    color: var(--text-muted);
+    line-height: 1.5;
+    margin: 0;
+}
+
+/* Drop zone */
+.nm-drop-zone {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 120px;
+    border: 2px dashed rgba(99, 102, 241, 0.2);
+    border-radius: var(--radius-lg);
+    background: rgba(15, 20, 42, 0.3);
+    cursor: pointer;
+    transition: all 0.2s;
+    padding: 20px;
+}
+
+.nm-drop-zone:hover {
+    border-color: var(--accent-primary);
+    background: rgba(99, 102, 241, 0.04);
+}
+
+.nm-drop-zone.has-file {
+    border-style: solid;
+    border-color: rgba(16, 185, 129, 0.3);
+    background: rgba(16, 185, 129, 0.03);
+    cursor: default;
+}
+
+.nm-drop-content {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    color: var(--text-muted);
+    font-size: 0.875rem;
+}
+
+.nm-drop-hint {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    opacity: 0.7;
+}
+
+/* File preview */
+.nm-file-preview {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+}
+
+.nm-file-info {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    color: var(--text-primary);
+}
+
+.nm-file-name {
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.nm-file-size {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+}
+
+/* Upload actions */
+.nm-upload-actions {
+    margin-top: 16px;
+}
+
+.nm-upload-btn {
+    width: 100%;
+    justify-content: center;
+}
+
+.nm-progress {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 14px;
+    background: rgba(99, 102, 241, 0.06);
+    border-radius: var(--radius-md);
+    margin-bottom: 12px;
+    font-size: 0.8rem;
+    color: var(--accent-primary);
+    font-weight: 500;
+}
+
+.spin {
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    from {
+        transform: rotate(0deg);
+    }
+
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+/* ── Responsive ── */
 @media (max-width: 640px) {
     .nm-mode-selector {
         grid-template-columns: 1fr;
@@ -127,5 +377,15 @@
 
     .nm-actions .btn {
         width: 100%;
+    }
+
+    .nm-credential-row {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 8px;
+    }
+
+    .nm-upload-header {
+        flex-direction: column;
     }
 }

@@ -23,19 +23,47 @@ export function AuthProvider({ children }) {
     }, []);
 
     const login = async (email, password) => {
-        const res = await authAPI.login({ email, password });
-        localStorage.setItem('access_token', res.data.access_token);
-        localStorage.setItem('refresh_token', res.data.refresh_token);
-        setUser(res.data.user);
-        return res.data;
+        try {
+            const res = await authAPI.login({ email, password });
+            const data = res.data;
+            localStorage.setItem('access_token', data.access_token);
+            localStorage.setItem('refresh_token', data.refresh_token);
+            // user object may come from the token response or /me endpoint
+            if (data.user) {
+                setUser(data.user);
+            } else {
+                // Fetch user profile if not included in login response
+                const meRes = await authAPI.getMe();
+                setUser(meRes.data);
+            }
+            return data;
+        } catch (err) {
+            throw err;
+        }
     };
 
     const register = async (email, password, full_name) => {
-        const res = await authAPI.register({ email, password, full_name });
-        localStorage.setItem('access_token', res.data.access_token);
-        localStorage.setItem('refresh_token', res.data.refresh_token);
-        setUser(res.data.user);
-        return res.data;
+        try {
+            const res = await authAPI.register({ email, password, full_name });
+            const data = res.data;
+            localStorage.setItem('access_token', data.access_token);
+            localStorage.setItem('refresh_token', data.refresh_token);
+            if (data.user) {
+                // If user is an ORM object, it may need re-fetching
+                if (typeof data.user === 'object' && data.user.id) {
+                    setUser(data.user);
+                } else {
+                    const meRes = await authAPI.getMe();
+                    setUser(meRes.data);
+                }
+            } else {
+                const meRes = await authAPI.getMe();
+                setUser(meRes.data);
+            }
+            return data;
+        } catch (err) {
+            throw err;
+        }
     };
 
     const logout = () => {

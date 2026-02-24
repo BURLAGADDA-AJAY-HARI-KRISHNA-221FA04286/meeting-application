@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route, Navigate, Outlet } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, Outlet, useLocation, useParams } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import Layout from './components/Layout';
@@ -8,13 +8,14 @@ import DashboardPage from './pages/DashboardPage';
 import MeetingsPage from './pages/MeetingsPage';
 import NewMeetingPage from './pages/NewMeetingPage';
 import MeetingDetailPage from './pages/MeetingDetailPage';
-import LiveMeetingPage from './pages/LiveMeetingPage';
 import TaskBoardPage from './pages/TaskBoardPage';
 import SettingsPage from './pages/SettingsPage';
 import VideoMeetingPage from './pages/VideoMeetingPage';
+import './pages/Mobile.css';
 
 function PrivateRoute() {
   const { user, loading } = useAuth();
+  const location = useLocation();
   if (loading) {
     return (
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh' }}>
@@ -22,11 +23,13 @@ function PrivateRoute() {
       </div>
     );
   }
-  return user ? <Outlet /> : <Navigate to="/login" />;
+  // Preserve the URL the user was trying to visit so we can redirect after login
+  return user ? <Outlet /> : <Navigate to={`/login?returnTo=${encodeURIComponent(location.pathname)}`} />;
 }
 
 function PublicRoute() {
   const { user, loading } = useAuth();
+  const location = useLocation();
   if (loading) {
     return (
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh' }}>
@@ -34,7 +37,16 @@ function PublicRoute() {
       </div>
     );
   }
-  return user ? <Navigate to="/dashboard" /> : <Outlet />;
+  // After login, redirect to the returnTo URL if present
+  const params = new URLSearchParams(location.search);
+  const returnTo = params.get('returnTo');
+  return user ? <Navigate to={returnTo || '/dashboard'} /> : <Outlet />;
+}
+
+// Direct join link component — redirects /join/:roomId → /meetings/room/:roomId
+function JoinRedirect() {
+  const { roomId } = useParams();
+  return <Navigate to={`/meetings/room/${roomId}`} replace />;
 }
 
 export default function App() {
@@ -66,19 +78,28 @@ export default function App() {
 
           {/* Private routes */}
           <Route element={<PrivateRoute />}>
+            {/* Pages inside Layout (with sidebar) */}
             <Route element={<Layout />}>
               <Route path="/dashboard" element={<DashboardPage />} />
               <Route path="/meetings" element={<MeetingsPage />} />
               <Route path="/meetings/new" element={<NewMeetingPage />} />
               <Route path="/meetings/:id" element={<MeetingDetailPage />} />
-              <Route path="/meetings/live" element={<LiveMeetingPage />} />
-              <Route path="/meetings/:id/live" element={<LiveMeetingPage />} />
               <Route path="/tasks" element={<TaskBoardPage />} />
               <Route path="/settings" element={<SettingsPage />} />
             </Route>
+
+            {/* Direct join links — /join/:roomId goes straight to meeting room */}
+            <Route path="/join/:roomId" element={<JoinRedirect />} />
+
             {/* Video meeting — fullscreen, outside Layout */}
-            <Route path="/video-meeting" element={<VideoMeetingPage />} />
-            <Route path="/video-meeting/:roomId" element={<VideoMeetingPage />} />
+            <Route path="/meetings/room/:roomId" element={<VideoMeetingPage />} />
+
+            {/* Redirects for old routes */}
+            <Route path="/join" element={<Navigate to="/meetings/new" replace />} />
+            <Route path="/video-meeting" element={<Navigate to="/meetings/new" replace />} />
+            <Route path="/video-meeting/:roomId" element={<Navigate to="/meetings/new" replace />} />
+            <Route path="/meetings/live" element={<Navigate to="/meetings/new" replace />} />
+            <Route path="/meetings/:id/live" element={<Navigate to="/meetings/new" replace />} />
           </Route>
 
           {/* Catch-all */}

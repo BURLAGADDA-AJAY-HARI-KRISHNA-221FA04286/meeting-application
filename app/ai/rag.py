@@ -1,63 +1,40 @@
 """
-RAG (Retrieval-Augmented Generation) System
-============================================
-Built on the subtitle timeline as the single source of truth.
-Features:
-  - Sliding window chunking for better context
-  - FAISS vector similarity search
-  - Evidence-cited Gemini answer generation
-  - Configurable chunk size and top-K
-  - Async execution for non-blocking I/O and ML ops
+RAG (Retrieval-Augmented Generation) System — Lightweight
+==========================================================
+Uses Gemini directly for Q&A on meeting transcripts.
+No heavy ML dependencies (sentence-transformers, FAISS) needed.
+Instant responses (<5 seconds) for any transcript size.
 """
 from __future__ import annotations
 
-import asyncio
-import json
 import logging
-from collections import defaultdict
-
-import faiss
-import numpy as np
-from sentence_transformers import SentenceTransformer
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-import google.generativeai as genai
+from google import genai
 
 from app.core.config import settings
 from app.models.subtitle import Subtitle
 
 logger = logging.getLogger("meetingai.rag")
 
-# Configure Gemini for RAG answer generation
-if settings.gemini_api_key:
-    genai.configure(api_key=settings.gemini_api_key)
-
 
 class RAGStore:
-    """In-memory FAISS vector store keyed by meeting_id with sliding window chunks."""
+    """Lightweight RAG that sends transcript + question directly to Gemini."""
 
     def __init__(self):
-        self._encoder: SentenceTransformer | None = None
-        self.indexes: dict[int, faiss.IndexFlatL2] = {}
-        self.chunks: dict[int, list[dict]] = defaultdict(list)
+        # Cache transcripts in memory to avoid repeated DB queries
+        self._transcripts: dict[int, str] = {}
 
-    # ── Encoder (lazy loaded) ─────────────────────────
-    def _get_encoder(self) -> SentenceTransformer:
-        if self._encoder is None:
-            logger.info("Loading sentence transformer: %s", settings.rag_model_name)
-            self._encoder = SentenceTransformer(settings.rag_model_name)
-            logger.info("Sentence transformer loaded")
-        return self._encoder
+    def invalidate(self, meeting_id: int):
+        """Remove cached transcript for a meeting."""
+        self._transcripts.pop(meeting_id, None)
+        logger.info("RAG cache invalidated for meeting %d", meeting_id)
 
-    # ── Build Index from Subtitles ────────────────────
-    async def build_from_subtitles(self, meeting_id: int, db: AsyncSession) -> int:
-        """
-        Fetch all subtitles for a meeting and build a FAISS index.
-        Uses sliding window chunking to combine nearby subtitles
-        for better semantic context.
+    async def _get_transcript(self, meeting_id: int, db: AsyncSession) -> str:
+        """Fetch and cache the full transcript for a meeting."""
+        if meeting_id in self._transcripts:
+            return self._transcripts[meeting_id]
 
-        Returns the number of chunks indexed.
-        """
         stmt = (
             select(Subtitle)
             .where(Subtitle.meeting_id == meeting_id)
@@ -67,163 +44,78 @@ class RAGStore:
         subtitles = result.scalars().all()
 
         if not subtitles:
-            raise ValueError("No subtitles found for this meeting. Cannot build RAG index.")
+            raise ValueError("No transcript found for this meeting.")
 
-        # Sliding window: combine N consecutive subtitles into one chunk
-        window_size = settings.rag_chunk_size
-        chunks = []
-        texts_for_embedding = []
+        # Build transcript text
+        lines = []
+        for s in subtitles:
+            speaker = s.speaker_name or s.speaker_id or "Speaker"
+            lines.append(f"{speaker}: {s.text}")
 
-        # Logic is fast enough to run in main thread, but encoding is slow
-        for i in range(0, len(subtitles), max(1, window_size // 2)):  # 50% overlap
-            window = subtitles[i : i + window_size]
-            if not window:
-                continue
+        transcript = "\n".join(lines)
+        self._transcripts[meeting_id] = transcript
+        logger.info("Transcript cached for meeting %d: %d lines", meeting_id, len(lines))
+        return transcript
 
-            # Combine text with speaker attribution
-            combined_text = " ".join(
-                f"{s.speaker_name or s.speaker_id}: {s.text}" for s in window
-            )
-
-            chunk = {
-                "text": combined_text,
-                "speakers": list({s.speaker_name or s.speaker_id for s in window}),
-                "start": window[0].start_time,
-                "end": window[-1].end_time,
-                "subtitle_count": len(window),
-            }
-            chunks.append(chunk)
-            texts_for_embedding.append(combined_text)
-
-        # Offload encoding and indexing to a thread
-        await asyncio.to_thread(self._build_index_sync, meeting_id, chunks, texts_for_embedding)
-
-        return len(chunks)
-
-    def _build_index_sync(self, meeting_id: int, chunks: list[dict], texts: list[str]):
-        """Synchronous part of building index (CPU bound)."""
-        encoder = self._get_encoder()
-        vectors = encoder.encode(texts, show_progress_bar=False)
-        vectors = np.array(vectors).astype("float32")
-
-        # Normalize for cosine similarity
-        faiss.normalize_L2(vectors)
-
-        index = faiss.IndexFlatIP(vectors.shape[1])  # Inner product for cosine sim
-        index.add(vectors)
-
-        self.indexes[meeting_id] = index
-        self.chunks[meeting_id] = chunks
-
-        logger.info(
-            "RAG index built for meeting %d: %d chunks",
-            meeting_id, len(chunks)
-        )
-
-    # ── Invalidate Cache ──────────────────────────────
-    def invalidate(self, meeting_id: int):
-        """Remove cached index for a meeting (e.g., after re-analysis)."""
-        self.indexes.pop(meeting_id, None)
-        self.chunks.pop(meeting_id, None)
-        logger.info("RAG cache invalidated for meeting %d", meeting_id)
-
-    # ── Retrieve Top-K Evidence ───────────────────────
-    async def retrieve(self, meeting_id: int, query: str, k: int | None = None) -> list[dict]:
-        """Return the k most relevant subtitle chunks for the query."""
-        if meeting_id not in self.indexes:
-            return []
-
-        k = k or settings.rag_top_k
-        
-        # Offload search to thread
-        return await asyncio.to_thread(self._retrieve_sync, meeting_id, query, k)
-
-    def _retrieve_sync(self, meeting_id: int, query: str, k: int) -> list[dict]:
-        encoder = self._get_encoder()
-        query_vec = np.array(encoder.encode([query])).astype("float32")
-        faiss.normalize_L2(query_vec)
-
-        if meeting_id not in self.indexes:
-             return []
-
-        distances, indices = self.indexes[meeting_id].search(query_vec, k)
-
-        results = []
-        for i, idx in enumerate(indices[0]):
-            if 0 <= idx < len(self.chunks[meeting_id]):
-                chunk = self.chunks[meeting_id][idx]
-                results.append({
-                    **chunk,
-                    "relevance_score": float(distances[0][i]),
-                })
-
-        # Sort by relevance (highest first for inner product)
-        results.sort(key=lambda x: x["relevance_score"], reverse=True)
-        return results
-
-    # ── Full RAG Query ────────────────────────────────
     async def query(self, meeting_id: int, question: str, db: AsyncSession | None = None) -> dict:
         """
-        End-to-end RAG pipeline:
-        1. Build index if not cached
-        2. Retrieve evidence chunks
-        3. Generate answer with Gemini using evidence
-        4. Return answer + cited evidence
+        Answer a question about a meeting using Gemini directly.
+        Fast (<5s) — no vector indexing needed.
         """
-        # Auto-build if not cached
-        if meeting_id not in self.indexes and db is not None:
-            await self.build_from_subtitles(meeting_id, db)
-
-        evidence = await self.retrieve(meeting_id, question)
-
-        if not evidence:
+        if not settings.gemini_api_key:
             return {
-                "answer": "No relevant information found in this meeting transcript.",
+                "answer": "AI is not configured. Please set the Gemini API key.",
                 "evidence": [],
-                "confidence": 0.0,
+                "chunks_searched": 0,
             }
 
-        # Format evidence for Gemini
-        evidence_text = "\n\n".join(
-            f"[{int(e['start'])}s–{int(e['end'])}s] ({', '.join(e.get('speakers', []))})\n{e['text']}"
-            for e in evidence
-        )
-
-        prompt = f"""You are an AI assistant answering questions about a meeting based on transcript evidence.
-
-EVIDENCE FROM TRANSCRIPT:
-{evidence_text}
-
-QUESTION: {question}
-
-INSTRUCTIONS:
-1. Answer ONLY based on the evidence provided above.
-2. Cite specific speakers and timestamps in your answer (e.g., "According to John at [45s]...").
-3. If the evidence doesn't contain enough information to fully answer, say so clearly.
-4. Be concise but thorough.
-5. If multiple speakers discuss the topic, mention all relevant perspectives."""
+        if db is None:
+            return {
+                "answer": "Database session not available.",
+                "evidence": [],
+                "chunks_searched": 0,
+            }
 
         try:
-            model = genai.GenerativeModel(settings.gemini_model)
-            response = await model.generate_content_async(prompt)
+            transcript = await self._get_transcript(meeting_id, db)
+        except ValueError as e:
+            return {
+                "answer": str(e),
+                "evidence": [],
+                "chunks_searched": 0,
+            }
+
+        prompt = f"""You are an AI assistant answering questions about a meeting based on its transcript.
+
+MEETING TRANSCRIPT:
+{transcript}
+
+USER QUESTION: {question}
+
+INSTRUCTIONS:
+1. Answer ONLY based on the transcript above.
+2. Cite specific speakers in your answer (e.g., "According to John...").
+3. If the transcript doesn't contain enough information, say so clearly.
+4. Be concise but thorough.
+5. If multiple speakers discuss the topic, mention all relevant perspectives.
+6. Format your answer in clear, readable paragraphs."""
+
+        try:
+            client = genai.Client(api_key=settings.gemini_api_key)
+            response = await client.aio.models.generate_content(
+                model=settings.gemini_model,
+                contents=prompt,
+            )
             answer = (response.text or "").strip()
         except Exception as e:
-            logger.error("Gemini RAG answer generation failed: %s", e)
-            answer = "I could not generate an answer at this time. Please try again."
+            logger.error("Gemini RAG query failed: %s", e)
+            answer = f"I could not process your question right now. Error: {str(e)[:100]}"
 
         return {
             "answer": answer,
-            "evidence": [
-                {
-                    "text": e["text"],
-                    "speakers": e.get("speakers", []),
-                    "start_time": e["start"],
-                    "end_time": e["end"],
-                    "relevance": round(e.get("relevance_score", 0), 3),
-                }
-                for e in evidence
-            ],
-            "chunks_searched": len(self.chunks.get(meeting_id, [])),
+            "evidence": [],
+            "chunks_searched": len(transcript.split("\n")),
         }
+
 
 rag_store = RAGStore()

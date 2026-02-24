@@ -2,9 +2,9 @@ import { useState, useEffect, useCallback } from 'react';
 import { Outlet, NavLink, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import {
-    Brain, LayoutDashboard, Video, CheckSquare, Settings,
+    Brain, LayoutDashboard, Video, SquareCheck, Settings,
     LogOut, Search, ChevronLeft, ChevronRight, Plus, Menu,
-    X, Command, Clock, Camera
+    X, Command, Clock
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import './Layout.css';
@@ -35,7 +35,7 @@ export default function Layout() {
         if (e.altKey && e.key === '2') { e.preventDefault(); navigate('/meetings'); }
         if (e.altKey && e.key === '3') { e.preventDefault(); navigate('/tasks'); }
         if (e.altKey && e.key === '4') { e.preventDefault(); navigate('/settings'); }
-        if (e.altKey && e.key === '5') { e.preventDefault(); navigate('/video-meeting'); }
+        if (e.altKey && e.key === '5') { e.preventDefault(); navigate('/meetings/new'); }
         if (e.key === 'Escape') setShowPalette(false);
     }, [navigate]);
 
@@ -47,7 +47,7 @@ export default function Layout() {
     const navItems = [
         { to: '/dashboard', icon: LayoutDashboard, label: 'Dashboard', shortcut: '1' },
         { to: '/meetings', icon: Video, label: 'Meetings', shortcut: '2' },
-        { to: '/tasks', icon: CheckSquare, label: 'Tasks', shortcut: '3' },
+        { to: '/tasks', icon: SquareCheck, label: 'Tasks', shortcut: '3' },
         { to: '/settings', icon: Settings, label: 'Settings', shortcut: '4' },
     ];
 
@@ -56,8 +56,7 @@ export default function Layout() {
         { label: 'Go to Meetings', action: () => navigate('/meetings') },
         { label: 'Go to Tasks', action: () => navigate('/tasks') },
         { label: 'Go to Settings', action: () => navigate('/settings') },
-        { label: 'New Meeting', action: () => navigate('/meetings/new') },
-        { label: 'Start Video Meeting', action: () => navigate('/video-meeting') },
+        { label: 'New Meeting (Start / Join / Upload)', action: () => navigate('/meetings/new') },
     ];
 
     const filteredCommands = searchQuery
@@ -75,7 +74,6 @@ export default function Layout() {
         const path = location.pathname;
         if (path.includes('/dashboard')) return 'Dashboard';
         if (path.includes('/meetings/new')) return 'New Meeting';
-        if (path.includes('/meetings/live')) return 'Live Meeting';
         if (path.includes('/meetings/')) return 'Meeting Details';
         if (path.includes('/meetings')) return 'Meetings';
         if (path.includes('/tasks')) return 'Tasks';
@@ -156,22 +154,6 @@ export default function Layout() {
                         </NavLink>
                     ))}
                 </nav>
-
-                {/* Video Meeting Quick Launch */}
-                {collapsed ? (
-                    <button
-                        className="sidebar-quick-action-mini video-meeting-btn"
-                        onClick={() => navigate('/video-meeting')}
-                        title="Video Meeting"
-                    >
-                        <Camera size={18} />
-                    </button>
-                ) : (
-                    <button className="sidebar-video-meeting" onClick={() => navigate('/video-meeting')}>
-                        <Camera size={18} />
-                        <span>Video Meeting</span>
-                    </button>
-                )}
 
                 {/* Status */}
                 {!collapsed && (

@@ -1,0 +1,112 @@
+/* 
+  Mobile Responsiveness & CSS Tweaks 
+*/
+
+@media (max-width: 768px) {
+    .page-container {
+        padding: 16px;
+    }
+
+    /* Live Meeting Layout */
+    .live-meeting-page {
+        flex-direction: column;
+    }
+
+    .live-content {
+        flex-direction: column;
+    }
+
+    .live-sidebar {
+        width: 100%;
+        height: 40vh;
+        border-left: none;
+        border-top: 1px solid var(--border-color);
+    }
+
+    .stage-area {
+        height: 50vh;
+    }
+
+    .live-header {
+        padding: 12px;
+        flex-wrap: wrap;
+        gap: 8px;
+    }
+
+    .live-header-actions {
+        width: 100%;
+        justify-content: space-between;
+    }
+
+    .live-header-actions button {
+        padding: 6px 12px;
+        font-size: 0.9rem;
+    }
+
+    /* Dashboard Grid */
+    .dashboard-stats.grid-4 {
+        grid-template-columns: 1fr 1fr;
+        /* 2 cols on tablet */
+    }
+
+    .dashboard-main-grid {
+        grid-template-columns: 1fr;
+    }
+
+    /* Meeting Detail */
+    .detail-header {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 16px;
+    }
+
+    .detail-actions {
+        width: 100%;
+        justify-content: space-between;
+        flex-wrap: wrap;
+    }
+
+    .analysis-grid {
+        grid-template-columns: 1fr;
+    }
+
+    /* Modals */
+    .settings-modal {
+        width: 100%;
+        height: 100%;
+        border-radius: 0;
+    }
+
+    .settings-body {
+        flex-direction: column;
+    }
+
+    .settings-sidebar {
+        width: 100%;
+        flex-direction: row;
+        overflow-x: auto;
+        border-right: none;
+        border-bottom: 1px solid var(--border-color);
+        padding: 8px;
+    }
+
+    .settings-tab {
+        white-space: nowrap;
+    }
+}
+
+@media (max-width: 480px) {
+    .dashboard-stats.grid-4 {
+        grid-template-columns: 1fr;
+        /* 1 col on mobile */
+    }
+
+    .page-title {
+        font-size: 1.5rem;
+    }
+
+    .live-timer {
+        display: none;
+        /* Hide timer on very small screens */
+    }
+}

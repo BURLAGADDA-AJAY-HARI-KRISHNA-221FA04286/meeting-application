@@ -23,7 +23,7 @@ class Settings(BaseSettings):
 
     # ── AI / Gemini ────────────────────────────────────
     gemini_api_key: str = ""
-    gemini_model: str = "gemini-1.5-flash"
+    gemini_model: str = "gemini-2.0-flash"
     gemini_temperature: float = 0.3
     gemini_max_retries: int = 2
 

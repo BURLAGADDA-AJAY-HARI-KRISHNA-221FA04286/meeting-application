@@ -6,7 +6,7 @@ import { motion } from 'framer-motion';
 import {
     LayoutDashboard, Video, CheckCircle, Brain, TrendingUp,
     Plus, Upload, Mic, ArrowUpRight, Calendar, Sparkles,
-    Target, AlertTriangle, MessageSquare, Clock
+    Target, TriangleAlert, MessageSquare, Clock
 } from 'lucide-react';
 import './Dashboard.css';
 
@@ -21,10 +21,15 @@ export default function DashboardPage() {
     const [stats, setStats] = useState(null);
     const [loading, setLoading] = useState(true);
 
+    const [error, setError] = useState(null);
+
     useEffect(() => {
         meetingsAPI.dashboard()
             .then(res => setStats(res.data))
-            .catch(() => { })
+            .catch((err) => {
+                console.error("Dashboard failed:", err);
+                setError(err.message || "Failed to load dashboard");
+            })
             .finally(() => setLoading(false));
     }, []);
 
@@ -46,6 +51,23 @@ export default function DashboardPage() {
         );
     }
 
+    if (error) {
+        return (
+            <div className="page-container">
+                <div className="error-screen" style={{ textAlign: 'center', marginTop: 100 }}>
+                    <div className="text-danger" style={{ marginBottom: 16 }}>
+                        <TriangleAlert size={48} />
+                    </div>
+                    <h2>Something went wrong</h2>
+                    <p className="text-muted">{error}</p>
+                    <button className="btn btn-primary" onClick={() => window.location.reload()} style={{ marginTop: 24 }}>
+                        Retry
+                    </button>
+                </div>
+            </div>
+        );
+    }
+
     const s = stats || {};
     const totalTasks = (s.tasks_todo || 0) + (s.tasks_in_progress || 0) + (s.tasks_done || 0);
     const completionPct = totalTasks ? Math.round((s.tasks_done || 0) / totalTasks * 100) : 0;
@@ -60,7 +82,7 @@ export default function DashboardPage() {
     const aiFeatures = [
         { icon: Sparkles, text: 'Meeting Summary Generation' },
         { icon: Target, text: 'Action Items Extraction' },
-        { icon: AlertTriangle, text: 'Risk & Blocker Detection' },
+        { icon: TriangleAlert, text: 'Risk & Blocker Detection' },
         { icon: MessageSquare, text: 'AI Chat (RAG Queries)' },
     ];
 
@@ -198,9 +220,9 @@ export default function DashboardPage() {
                         </div>
                         <div className="quick-start-grid">
                             {[
+                                { icon: Video, title: 'New Meeting', desc: 'Start or join', bg: 'rgba(236,72,153,0.1)', color: '#ec4899', onClick: () => navigate('/meetings/new') },
                                 { icon: Upload, title: 'Upload', desc: 'Paste transcript', bg: 'rgba(99,102,241,0.1)', color: '#6366f1', onClick: () => navigate('/meetings/new') },
-                                { icon: Mic, title: 'Live Record', desc: 'Start recording', bg: 'rgba(239,68,68,0.1)', color: '#ef4444', onClick: () => navigate('/meetings/new') },
-                                { icon: Brain, title: 'Browse', desc: 'View meetings', bg: 'rgba(16,185,129,0.1)', color: '#10b981', onClick: () => navigate('/meetings') },
+                                { icon: Brain, title: 'Meetings', desc: 'View all', bg: 'rgba(16,185,129,0.1)', color: '#10b981', onClick: () => navigate('/meetings') },
                             ].map((q, i) => (
                                 <motion.div
                                     key={q.title}

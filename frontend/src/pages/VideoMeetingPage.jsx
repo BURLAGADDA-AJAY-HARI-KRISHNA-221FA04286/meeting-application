@@ -1,1006 +1,1260 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useEffect, useState, useRef, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { useAuth } from '../context/AuthContext';
 import { videoMeetingAPI, createVideoMeetingWebSocket } from '../api';
-import { motion, AnimatePresence } from 'framer-motion';
+import { useAuth } from '../context/AuthContext';
 import {
-    Video, VideoOff, Mic, MicOff, MonitorUp, PhoneOff,
-    MessageSquare, Users, Copy, Check, Send, Hand,
-    Maximize, Minimize, ScreenShareOff, X, Radio, Clock,
-    Link as LinkIcon, Lock, Unlock, Shield, UserX, Volume2,
-    VolumeX, Circle, Square, Pencil, BarChart3, StickyNote,
-    Eraser, Trash2, ChevronDown, Settings, Layers, Image,
-    Download, Keyboard, AlertCircle
+    Mic, MicOff, Video, VideoOff, PhoneOff, Monitor, MonitorOff,
+    Copy, MessageSquare, Users, Hand, MoreVertical, Maximize, Minimize,
+    Circle, Square, Pencil, BarChart3, Captions, CaptionsOff,
+    Download, Timer, X, ChevronUp, ChevronDown, Settings2,
+    Hash, Lock, FileText, HelpCircle, Send
 } from 'lucide-react';
 import toast from 'react-hot-toast';
+import Chat from '../components/Chat';
+import Whiteboard from '../components/Whiteboard';
 import './VideoMeeting.css';
 
-const ICE_SERVERS = [
-    { urls: 'stun:stun.l.google.com:19302' },
-    { urls: 'stun:stun1.l.google.com:19302' },
-];
+/* ── Helpers ── */
+const formatTime = (s) => {
+    const h = Math.floor(s / 3600);
+    const m = Math.floor((s % 3600) / 60);
+    const sec = s % 60;
+    return h > 0
+        ? `${h}:${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`
+        : `${m}:${String(sec).padStart(2, '0')}`;
+};
 
+/* ── Main Component ── */
 export default function VideoMeetingPage() {
-    const { roomId: paramRoomId } = useParams();
+    const { roomId } = useParams();
     const navigate = useNavigate();
     const { user } = useAuth();
 
-    // ── Core State ──
-    const [phase, setPhase] = useState('lobby');          // lobby | waiting | meeting
-    const [roomId, setRoomId] = useState(paramRoomId || '');
-    const [displayName, setDisplayName] = useState(user?.full_name || '');
-    const [participants, setParticipants] = useState([]);
-    const [isHost, setIsHost] = useState(false);
-    const [duration, setDuration] = useState(0);
+    // ── Room Info (meeting code, password, etc.) ──
+    const [roomInfo, setRoomInfo] = useState(null);
 
-    // ── Media State ──
-    const [videoOn, setVideoOn] = useState(true);
-    const [audioOn, setAudioOn] = useState(true);
-    const [screenSharing, setScreenSharing] = useState(false);
-    const [bgBlur, setBgBlur] = useState(false);
-    const [handRaised, setHandRaised] = useState(false);
+    // ── Core Media State ──
+    const [localStream, setLocalStream] = useState(null);
+    const [peers, setPeers] = useState({});
+    const [micOn, setMicOn] = useState(true);
+    const [camOn, setCamOn] = useState(true);
+    const [screenStream, setScreenStream] = useState(null);
 
-    // ── Panels ──
-    const [activePanel, setActivePanel] = useState(null);  // chat | participants | whiteboard | polls | notes | shortcuts | settings
-    const [isFullscreen, setIsFullscreen] = useState(false);
-    const [viewMode, setViewMode] = useState('gallery');   // gallery | speaker
-    const [pinnedUser, setPinnedUser] = useState(null);
-
-    // ── Chat ──
+    // ── UI Panels ──
+    const [activePanel, setActivePanel] = useState(null); // 'chat' | 'participants' | 'whiteboard' | 'polls' | null
     const [chatMessages, setChatMessages] = useState([]);
-    const [chatInput, setChatInput] = useState('');
-    const [unreadChat, setUnreadChat] = useState(0);
+    const [unreadChats, setUnreadChats] = useState(0);
+
+    // ── Captions ──
+    const [captionsOn, setCaptionsOn] = useState(false);
+    const [captions, setCaptions] = useState([]);
+    const recognitionRef = useRef(null);
 
     // ── Recording ──
     const [isRecording, setIsRecording] = useState(false);
     const [recordingTime, setRecordingTime] = useState(0);
+    const mediaRecorderRef = useRef(null);
+    const recordedChunksRef = useRef([]);
+    const recordingTimerRef = useRef(null);
 
-    // ── Settings ──
-    const [meetingSettings, setMeetingSettings] = useState({
-        locked: false, waiting_room_enabled: false, recording: false, host_id: '',
-    });
-    const [waitingList, setWaitingList] = useState([]);
+    // ── Meeting Timer ──
+    const [meetingDuration, setMeetingDuration] = useState(0);
+    const meetingTimerRef = useRef(null);
 
-    // ── Polls ──
-    const [polls, setPolls] = useState({});
+    // ── Hand Raise / Reactions ──
+    const [handRaised, setHandRaised] = useState(false);
+    const [reactions, setReactions] = useState([]);
+    const [raisedHands, setRaisedHands] = useState(new Set());
+
+    // ── Participants ──
+    const [participants, setParticipants] = useState([]);
+
+    // ── Polls (inline) ──
+    const [polls, setPolls] = useState([]);
+    const [showPollCreator, setShowPollCreator] = useState(false);
     const [newPollQuestion, setNewPollQuestion] = useState('');
     const [newPollOptions, setNewPollOptions] = useState(['', '']);
 
-    // ── Notes ──
-    const [meetingNotes, setMeetingNotes] = useState('');
+    // ── More Menu / Fullscreen ──
+    const [showMoreMenu, setShowMoreMenu] = useState(false);
+    const [isFullscreen, setIsFullscreen] = useState(false);
+    const [layout, setLayout] = useState('grid'); // 'grid' | 'speaker'
 
-    // ── Whiteboard ──
-    const [wbColor, setWbColor] = useState('#ffffff');
-    const [wbWidth, setWbWidth] = useState(2);
-    const [wbTool, setWbTool] = useState('pen');
-    const [copied, setCopied] = useState(false);
-    const [remoteStreams, setRemoteStreams] = useState({});
+    // ── Q&A Panel ──
+    const [questions, setQuestions] = useState([]);
+    const [newQuestion, setNewQuestion] = useState('');
+
+    // ── Notepad Panel ──
+    const [notepadText, setNotepadText] = useState('Meeting Notes\n---\n');
+
+    // ── Transcript (accumulated from captions for saving/analysis) ──
+    const [savingTranscript, setSavingTranscript] = useState(false);
+    const transcriptRef = useRef([]); // { speaker, text, start_time, end_time, confidence }
+    const meetingStartTimeRef = useRef(Date.now());
 
     // ── Refs ──
     const wsRef = useRef(null);
-    const localStreamRef = useRef(null);
-    const screenStreamRef = useRef(null);
-    const peerConnectionsRef = useRef({});
-    const remoteStreamsRef = useRef({});
     const localVideoRef = useRef(null);
-    const chatEndRef = useRef(null);
-    const timerRef = useRef(null);
-    const recTimerRef = useRef(null);
-    const mediaRecorderRef = useRef(null);
-    const recordedChunksRef = useRef([]);
-    const canvasRef = useRef(null);
-    const isDrawingRef = useRef(false);
-    const lastPointRef = useRef(null);
-    const userIdRef = useRef(user?.id?.toString() || Math.random().toString(36).slice(2, 14));
+    const localStreamRef = useRef(null);
+    const peerConnections = useRef({});
+    const containerRef = useRef(null);
 
-    // ── Timer ──
-    useEffect(() => {
-        if (phase === 'meeting') {
-            timerRef.current = setInterval(() => setDuration(d => d + 1), 1000);
-        }
-        return () => clearInterval(timerRef.current);
-    }, [phase]);
+    /* ═══════════════════════════════════════════════
+       SETUP & TEARDOWN
+       ═══════════════════════════════════════════════ */
+    useEffect(() => { localStreamRef.current = localStream; }, [localStream]);
 
-    // ── Auto-start camera in lobby ──
+    // Meeting timer
     useEffect(() => {
-        if (phase === 'lobby') {
-            getLocalStream();
-        }
+        meetingTimerRef.current = setInterval(() => setMeetingDuration(d => d + 1), 1000);
+        return () => clearInterval(meetingTimerRef.current);
     }, []);
 
-    // ── Re-attach stream when phase changes (critical fix for blank video) ──
+    // Fetch room info (meeting code, password, etc.)
     useEffect(() => {
-        if (localVideoRef.current && localStreamRef.current) {
-            localVideoRef.current.srcObject = localStreamRef.current;
+        if (roomId) {
+            videoMeetingAPI.getRoomInfo(roomId)
+                .then(res => setRoomInfo(res.data))
+                .catch(() => { /* room info is optional */ });
         }
-    }, [phase]);
+    }, [roomId]);
 
-    const formatTime = (s) => {
-        const h = Math.floor(s / 3600);
-        const m = Math.floor((s % 3600) / 60);
-        const sec = s % 60;
-        return `${h > 0 ? h + ':' : ''}${m.toString().padStart(2, '0')}:${sec.toString().padStart(2, '0')}`;
-    };
+    // Main setup
+    useEffect(() => {
+        if (!user) return;
 
-    // ── Get Local Media ──
-    const getLocalStream = useCallback(async () => {
-        try {
-            const stream = await navigator.mediaDevices.getUserMedia({
-                video: { width: 1280, height: 720, facingMode: 'user' },
-                audio: true,
-            });
-            localStreamRef.current = stream;
-            if (localVideoRef.current) localVideoRef.current.srcObject = stream;
-            return stream;
-        } catch {
-            try {
-                const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+        if (!roomId) {
+            // Redirect to join page so users get meeting code + password
+            navigate('/meetings/new', { replace: true });
+            return;
+        }
+
+        navigator.mediaDevices.getUserMedia({ video: true, audio: true })
+            .then(stream => {
+                setLocalStream(stream);
                 localStreamRef.current = stream;
-                setVideoOn(false);
-                return stream;
-            } catch {
-                toast.error('No media devices available');
-                return null;
-            }
-        }
-    }, []);
-
-    // ── Create Peer Connection ──
-    const createPeerConnection = useCallback((remoteUserId) => {
-        const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
-        if (localStreamRef.current) {
-            localStreamRef.current.getTracks().forEach(track => {
-                pc.addTrack(track, localStreamRef.current);
+                if (localVideoRef.current) localVideoRef.current.srcObject = stream;
+                connectSignaling(stream);
+            })
+            .catch(err => {
+                console.error("Media Error:", err);
+                toast.error('Camera/microphone access denied');
+                connectSignaling(null);
             });
-        }
-        pc.onicecandidate = (e) => {
-            if (e.candidate && wsRef.current?.readyState === WebSocket.OPEN) {
-                wsRef.current.send(JSON.stringify({
-                    type: 'ice-candidate', target: remoteUserId, candidate: e.candidate,
-                }));
-            }
-        };
-        pc.ontrack = (e) => {
-            const [stream] = e.streams;
-            remoteStreamsRef.current[remoteUserId] = stream;
-            setRemoteStreams(prev => ({ ...prev, [remoteUserId]: stream }));
-        };
-        peerConnectionsRef.current[remoteUserId] = pc;
-        return pc;
-    }, []);
 
-    // ── Connect to Room ──
-    const connectToRoom = useCallback(async () => {
-        // Reuse existing stream or get a new one
-        let stream = localStreamRef.current;
-        if (!stream) {
-            stream = await getLocalStream();
-            if (!stream) return;
-        }
-        const ws = createVideoMeetingWebSocket(roomId, userIdRef.current, displayName);
-        wsRef.current = ws;
-
-        ws.onopen = () => toast('Connecting…', { icon: '🔗' });
-
-        ws.onmessage = async (event) => {
-            const data = JSON.parse(event.data);
-            switch (data.type) {
-                // ── Core Signaling ──
-                case 'room-joined':
-                case 'admitted': {
-                    setPhase('meeting');
-                    setParticipants(data.participants || []);
-                    setChatMessages(data.chat_history || []);
-                    setIsHost(data.is_host);
-                    setMeetingSettings(data.settings || {});
-                    setPolls(data.polls || {});
-                    toast.success('Joined meeting');
-                    for (const p of (data.participants || [])) {
-                        if (p.user_id !== userIdRef.current) {
-                            const pc = createPeerConnection(p.user_id);
-                            const offer = await pc.createOffer();
-                            await pc.setLocalDescription(offer);
-                            ws.send(JSON.stringify({ type: 'offer', target: p.user_id, offer: pc.localDescription }));
-                        }
-                    }
-                    break;
-                }
-                case 'waiting-room':
-                    setPhase('waiting');
-                    toast('Waiting for host to admit you…', { icon: '⏳', duration: 10000 });
-                    break;
-                case 'meeting-locked':
-                    toast.error('This meeting is locked.');
-                    navigate('/dashboard');
-                    break;
-                case 'rejected':
-                    toast.error(data.message || 'Entry denied.');
-                    navigate('/dashboard');
-                    break;
-                case 'removed':
-                    toast.error(data.message || 'You were removed.');
-                    leaveMeeting();
-                    break;
-                case 'meeting-ended':
-                    toast(data.message || 'Meeting ended.', { icon: '📞' });
-                    leaveMeeting();
-                    break;
-                case 'user-joined':
-                    setParticipants(data.participants);
-                    toast(`${data.display_name} joined`, { icon: '👋' });
-                    break;
-                case 'user-left': {
-                    setParticipants(data.participants);
-                    toast(`${data.display_name} left`, { icon: '👋' });
-                    const pc = peerConnectionsRef.current[data.user_id];
-                    if (pc) { pc.close(); delete peerConnectionsRef.current[data.user_id]; }
-                    delete remoteStreamsRef.current[data.user_id];
-                    setRemoteStreams(prev => { const n = { ...prev }; delete n[data.user_id]; return n; });
-                    break;
-                }
-                case 'offer': {
-                    const pc = createPeerConnection(data.from_user);
-                    await pc.setRemoteDescription(new RTCSessionDescription(data.offer));
-                    const answer = await pc.createAnswer();
-                    await pc.setLocalDescription(answer);
-                    ws.send(JSON.stringify({ type: 'answer', target: data.from_user, answer: pc.localDescription }));
-                    break;
-                }
-                case 'answer': {
-                    const pc = peerConnectionsRef.current[data.from_user];
-                    if (pc) await pc.setRemoteDescription(new RTCSessionDescription(data.answer));
-                    break;
-                }
-                case 'ice-candidate': {
-                    const pc = peerConnectionsRef.current[data.from_user];
-                    if (pc) await pc.addIceCandidate(new RTCIceCandidate(data.candidate));
-                    break;
-                }
-                // ── Feature Events ──
-                case 'chat':
-                    setChatMessages(prev => [...prev, data]);
-                    if (activePanel !== 'chat') setUnreadChat(u => u + 1);
-                    setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 50);
-                    break;
-                case 'media-state':
-                    setParticipants(prev => prev.map(p =>
-                        p.user_id === data.user_id
-                            ? { ...p, video_on: data.video ?? p.video_on, audio_on: data.audio ?? p.audio_on, screen_sharing: data.screen ?? p.screen_sharing, bg_blurred: data.bg_blur ?? p.bg_blurred }
-                            : p
-                    ));
-                    break;
-                case 'hand-raised':
-                    setParticipants(data.participants);
-                    if (data.raised) toast(`${data.display_name} raised hand`, { icon: '✋' });
-                    break;
-                case 'all-hands-lowered':
-                    setParticipants(data.participants);
-                    toast('All hands lowered', { icon: '👇' });
-                    break;
-                case 'reaction':
-                    toast(`${data.display_name}: ${data.emoji}`, { duration: 2000 });
-                    break;
-                case 'host-mute-all':
-                    setParticipants(data.participants);
-                    toast('Host muted all participants', { icon: '🔇' });
-                    break;
-                case 'force-mute':
-                    if (localStreamRef.current) {
-                        localStreamRef.current.getAudioTracks().forEach(t => { t.enabled = false; });
-                        setAudioOn(false);
-                    }
-                    toast(data.message, { icon: '🔇' });
-                    break;
-                case 'settings-update':
-                    setMeetingSettings(data.settings);
-                    break;
-                case 'host-changed':
-                    setParticipants(data.participants);
-                    setMeetingSettings(data.settings);
-                    setIsHost(data.new_host === userIdRef.current);
-                    if (data.new_host === userIdRef.current) toast.success('You are now the host!');
-                    break;
-                case 'waiting-room-update':
-                    setWaitingList(data.waiting_list || []);
-                    break;
-                case 'recording-state':
-                    if (data.recording) toast('Recording started', { icon: '🔴' });
-                    else toast('Recording stopped', { icon: '⏹️' });
-                    break;
-                case 'poll-created':
-                    setPolls(prev => ({ ...prev, [data.poll.poll_id]: data.poll }));
-                    toast('New poll created!', { icon: '📊' });
-                    break;
-                case 'poll-updated':
-                    setPolls(prev => ({ ...prev, [data.poll.poll_id]: data.poll }));
-                    break;
-                case 'poll-ended':
-                    setPolls(prev => ({ ...prev, [data.poll.poll_id]: data.poll }));
-                    toast('Poll ended', { icon: '📊' });
-                    break;
-                case 'whiteboard-stroke':
-                    drawRemoteStroke(data);
-                    break;
-                case 'whiteboard-clear':
-                    clearCanvas();
-                    break;
-                case 'breakout-update':
-                    setParticipants(data.participants);
-                    toast('Breakout rooms updated', { icon: '🏠' });
-                    break;
-                case 'breakout-closed':
-                    setParticipants(data.participants);
-                    toast('Breakout rooms closed', { icon: '🏠' });
-                    break;
-            }
-        };
-
-        ws.onclose = () => {
-            if (phase === 'meeting') toast('Disconnected');
-        };
-    }, [roomId, displayName, getLocalStream, createPeerConnection, activePanel]);
-
-    // ── Media Controls ──
-    const toggleVideo = () => {
-        const vt = localStreamRef.current?.getVideoTracks()[0];
-        if (vt) { vt.enabled = !vt.enabled; setVideoOn(vt.enabled); wsRef.current?.send(JSON.stringify({ type: 'media-state', video: vt.enabled })); }
-    };
-    const toggleAudio = () => {
-        const at = localStreamRef.current?.getAudioTracks()[0];
-        if (at) { at.enabled = !at.enabled; setAudioOn(at.enabled); wsRef.current?.send(JSON.stringify({ type: 'media-state', audio: at.enabled })); }
-    };
-    const toggleBgBlur = () => {
-        setBgBlur(!bgBlur);
-        wsRef.current?.send(JSON.stringify({ type: 'media-state', bg_blur: !bgBlur }));
-    };
-    const toggleHand = () => {
-        setHandRaised(!handRaised);
-        wsRef.current?.send(JSON.stringify({ type: 'raise-hand', raised: !handRaised }));
-    };
-    const toggleScreenShare = async () => {
-        if (screenSharing) {
-            screenStreamRef.current?.getTracks().forEach(t => t.stop());
-            const vt = localStreamRef.current?.getVideoTracks()[0];
-            Object.values(peerConnectionsRef.current).forEach(pc => {
-                const sender = pc.getSenders().find(s => s.track?.kind === 'video');
-                if (sender && vt) sender.replaceTrack(vt);
-            });
-            setScreenSharing(false);
-            wsRef.current?.send(JSON.stringify({ type: 'media-state', screen: false }));
-        } else {
-            try {
-                const stream = await navigator.mediaDevices.getDisplayMedia({ video: { cursor: 'always' }, audio: false });
-                screenStreamRef.current = stream;
-                const st = stream.getVideoTracks()[0];
-                Object.values(peerConnectionsRef.current).forEach(pc => {
-                    const sender = pc.getSenders().find(s => s.track?.kind === 'video');
-                    if (sender) sender.replaceTrack(st);
-                });
-                st.onended = () => toggleScreenShare();
-                setScreenSharing(true);
-                wsRef.current?.send(JSON.stringify({ type: 'media-state', screen: true }));
-            } catch { /* user cancelled */ }
-        }
-    };
-
-    // ── Recording ──
-    const toggleRecording = () => {
-        if (isRecording) {
-            mediaRecorderRef.current?.stop();
-            setIsRecording(false);
-            clearInterval(recTimerRef.current);
-            wsRef.current?.send(JSON.stringify({ type: 'host-action', action: 'toggle-recording', recording: false }));
-        } else {
-            try {
-                const stream = localVideoRef.current?.captureStream?.() || localStreamRef.current;
-                if (!stream) { toast.error('No stream to record'); return; }
-                const mr = new MediaRecorder(stream, { mimeType: 'video/webm' });
-                recordedChunksRef.current = [];
-                mr.ondataavailable = (e) => { if (e.data.size > 0) recordedChunksRef.current.push(e.data); };
-                mr.onstop = () => {
-                    const blob = new Blob(recordedChunksRef.current, { type: 'video/webm' });
-                    const url = URL.createObjectURL(blob);
-                    const a = document.createElement('a');
-                    a.href = url; a.download = `meeting-${roomId}-${Date.now()}.webm`;
-                    a.click(); URL.revokeObjectURL(url);
-                    toast.success('Recording saved!');
-                };
-                mr.start(1000);
-                mediaRecorderRef.current = mr;
-                setIsRecording(true);
-                setRecordingTime(0);
-                recTimerRef.current = setInterval(() => setRecordingTime(t => t + 1), 1000);
-                wsRef.current?.send(JSON.stringify({ type: 'host-action', action: 'toggle-recording', recording: true }));
-                toast.success('Recording started');
-            } catch { toast.error('Recording not supported'); }
-        }
-    };
-
-    // ── Host Actions ──
-    const hostAction = (action, extra = {}) => {
-        wsRef.current?.send(JSON.stringify({ type: 'host-action', action, ...extra }));
-    };
-
-    // ── Chat ──
-    const sendChat = (e) => {
-        e.preventDefault();
-        if (!chatInput.trim()) return;
-        wsRef.current?.send(JSON.stringify({ type: 'chat', message: chatInput.trim() }));
-        setChatInput('');
-    };
-
-    // ── Polls ──
-    const createPoll = () => {
-        const validOptions = newPollOptions.filter(o => o.trim());
-        if (!newPollQuestion.trim() || validOptions.length < 2) {
-            toast.error('Need a question and at least 2 options'); return;
-        }
-        wsRef.current?.send(JSON.stringify({ type: 'create-poll', question: newPollQuestion, options: validOptions }));
-        setNewPollQuestion(''); setNewPollOptions(['', '']);
-    };
-    const votePoll = (pollId, idx) => {
-        wsRef.current?.send(JSON.stringify({ type: 'vote-poll', poll_id: pollId, option_index: idx }));
-    };
-
-    // ── Whiteboard ──
-    const drawRemoteStroke = (data) => {
-        const canvas = canvasRef.current;
-        if (!canvas) return;
-        const ctx = canvas.getContext('2d');
-        const pts = data.points || [];
-        if (pts.length < 2) return;
-        ctx.strokeStyle = data.color || '#fff';
-        ctx.lineWidth = data.width || 2;
-        ctx.lineCap = 'round';
-        ctx.beginPath();
-        ctx.moveTo(pts[0].x * canvas.width, pts[0].y * canvas.height);
-        for (let i = 1; i < pts.length; i++) {
-            ctx.lineTo(pts[i].x * canvas.width, pts[i].y * canvas.height);
-        }
-        ctx.stroke();
-    };
-    const clearCanvas = () => {
-        const canvas = canvasRef.current;
-        if (canvas) canvas.getContext('2d').clearRect(0, 0, canvas.width, canvas.height);
-    };
-    const handleCanvasMouseDown = (e) => {
-        isDrawingRef.current = true;
-        const rect = canvasRef.current.getBoundingClientRect();
-        lastPointRef.current = { x: (e.clientX - rect.left) / rect.width, y: (e.clientY - rect.top) / rect.height };
-    };
-    const handleCanvasMouseMove = (e) => {
-        if (!isDrawingRef.current) return;
-        const canvas = canvasRef.current;
-        const ctx = canvas.getContext('2d');
-        const rect = canvas.getBoundingClientRect();
-        const pt = { x: (e.clientX - rect.left) / rect.width, y: (e.clientY - rect.top) / rect.height };
-        ctx.strokeStyle = wbTool === 'eraser' ? '#1a1b2e' : wbColor;
-        ctx.lineWidth = wbTool === 'eraser' ? 20 : wbWidth;
-        ctx.lineCap = 'round';
-        ctx.beginPath();
-        ctx.moveTo(lastPointRef.current.x * canvas.width, lastPointRef.current.y * canvas.height);
-        ctx.lineTo(pt.x * canvas.width, pt.y * canvas.height);
-        ctx.stroke();
-        wsRef.current?.send(JSON.stringify({
-            type: 'whiteboard-stroke',
-            points: [lastPointRef.current, pt],
-            color: wbTool === 'eraser' ? '#1a1b2e' : wbColor,
-            width: wbTool === 'eraser' ? 20 : wbWidth,
-            tool: wbTool,
-        }));
-        lastPointRef.current = pt;
-    };
-    const handleCanvasMouseUp = () => { isDrawingRef.current = false; };
-
-    // ── Misc ──
-    const sendReaction = (emoji) => wsRef.current?.send(JSON.stringify({ type: 'reaction', emoji }));
-    const copyLink = () => {
-        navigator.clipboard.writeText(`${window.location.origin}/video-meeting/${roomId}`);
-        setCopied(true); toast.success('Link copied!'); setTimeout(() => setCopied(false), 2000);
-    };
-    const toggleFullscreen = () => {
-        if (!document.fullscreenElement) { document.documentElement.requestFullscreen(); setIsFullscreen(true); }
-        else { document.exitFullscreen(); setIsFullscreen(false); }
-    };
-    const togglePanel = (panel) => {
-        setActivePanel(activePanel === panel ? null : panel);
-        if (panel === 'chat') setUnreadChat(0);
-    };
-    const leaveMeeting = () => {
-        Object.values(peerConnectionsRef.current).forEach(pc => pc.close());
-        peerConnectionsRef.current = {};
-        wsRef.current?.close();
-        localStreamRef.current?.getTracks().forEach(t => t.stop());
-        screenStreamRef.current?.getTracks().forEach(t => t.stop());
-        mediaRecorderRef.current?.stop();
-        clearInterval(timerRef.current);
-        clearInterval(recTimerRef.current);
-        navigate('/dashboard');
-    };
-    const createRoom = async () => {
-        try {
-            const res = await videoMeetingAPI.createRoom('Video Meeting');
-            setRoomId(res.data.room_id);
-            toast.success(`Room ${res.data.room_id} created`);
-        } catch { toast.error('Failed to create room'); }
-    };
-
-    // Cleanup
-    useEffect(() => {
         return () => {
-            Object.values(peerConnectionsRef.current).forEach(pc => pc.close());
-            wsRef.current?.close();
-            localStreamRef.current?.getTracks().forEach(t => t.stop());
-            screenStreamRef.current?.getTracks().forEach(t => t.stop());
-            clearInterval(timerRef.current);
-            clearInterval(recTimerRef.current);
+            if (localStreamRef.current) localStreamRef.current.getTracks().forEach(t => t.stop());
+            if (wsRef.current) wsRef.current.close();
+            Object.values(peerConnections.current).forEach(pc => pc.close());
+            peerConnections.current = {};
+            if (recognitionRef.current) recognitionRef.current.stop();
+            stopRecording(true);
         };
-    }, []);
+    }, [roomId, user, navigate]);
 
-    // Keyboard shortcuts
+    /* ═══════════════════════════════════════════════
+       KEYBOARD SHORTCUTS
+       ═══════════════════════════════════════════════ */
     useEffect(() => {
         const handler = (e) => {
-            if (phase !== 'meeting') return;
+            // Don't trigger if typing in input
             if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
-            if (e.key === 'm' || e.key === 'M') toggleAudio();
-            if (e.key === 'v' || e.key === 'V') toggleVideo();
-            if (e.key === 'h' || e.key === 'H') toggleHand();
-            if (e.key === 'c' || e.key === 'C') togglePanel('chat');
-            if (e.key === 'p' || e.key === 'P') togglePanel('participants');
+
+            if (e.key === 'm' || e.key === 'M') { e.preventDefault(); toggleMic(); }
+            if (e.key === 'v' || e.key === 'V') { e.preventDefault(); toggleCam(); }
+            if (e.key === 'h' || e.key === 'H') { e.preventDefault(); toggleHandRaise(); }
+            if (e.key === 'c' || e.key === 'C') { e.preventDefault(); toggleCaptions(); }
+            if (e.key === 'r' || e.key === 'R') { e.preventDefault(); toggleRecording(); }
+            if (e.key === 'Escape') { setActivePanel(null); setShowMoreMenu(false); }
         };
         window.addEventListener('keydown', handler);
         return () => window.removeEventListener('keydown', handler);
-    }, [phase, audioOn, videoOn, handRaised, activePanel]);
+    }, [micOn, camOn, handRaised, captionsOn, isRecording]);
 
-    const totalVideos = 1 + Object.keys(remoteStreams).length;
-    const gridClass = totalVideos <= 1 ? 'grid-1' : totalVideos <= 2 ? 'grid-2' : totalVideos <= 4 ? 'grid-4' : totalVideos <= 6 ? 'grid-6' : 'grid-many';
-    const raisedHands = participants.filter(p => p.hand_raised);
+    /* ═══════════════════════════════════════════════
+       WEBRTC SIGNALING
+       ═══════════════════════════════════════════════ */
+    const connectSignaling = (stream) => {
+        const ws = createVideoMeetingWebSocket(roomId, user.id, user.full_name || 'User');
+        wsRef.current = ws;
 
-    // ════════════════════════════════════════════════════
-    // LOBBY
-    // ════════════════════════════════════════════════════
-    if (phase === 'lobby') {
-        return (
-            <div className="vm-lobby">
-                <div className="vm-lobby-bg"><div className="vm-orb vm-orb-1" /><div className="vm-orb vm-orb-2" /><div className="vm-orb vm-orb-3" /></div>
-                <motion.div className="vm-lobby-card" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
-                    <div className="vm-lobby-header">
-                        <div className="vm-lobby-logo"><Video size={28} /></div>
-                        <h1>Video Meeting</h1>
-                        <p>Connect face-to-face with your team</p>
-                    </div>
-                    <div className="vm-lobby-preview">
-                        <video ref={localVideoRef} autoPlay muted playsInline className="vm-lobby-video" style={{ filter: bgBlur ? 'blur(8px)' : 'none' }} />
-                        <div className="vm-lobby-preview-controls">
-                            <button className={`vm-preview-btn ${!videoOn ? 'off' : ''}`} onClick={() => {
-                                const vt = localStreamRef.current?.getVideoTracks()[0];
-                                if (vt) { vt.enabled = !vt.enabled; setVideoOn(vt.enabled); }
-                            }}>{videoOn ? <Video size={18} /> : <VideoOff size={18} />}</button>
-                            <button className={`vm-preview-btn ${!audioOn ? 'off' : ''}`} onClick={() => {
-                                const at = localStreamRef.current?.getAudioTracks()[0];
-                                if (at) { at.enabled = !at.enabled; setAudioOn(at.enabled); }
-                            }}>{audioOn ? <Mic size={18} /> : <MicOff size={18} />}</button>
-                            <button className={`vm-preview-btn ${bgBlur ? 'on' : ''}`} onClick={() => setBgBlur(!bgBlur)} title="Background Blur">
-                                <Image size={18} />
-                            </button>
-                        </div>
-                    </div>
-                    <div className="vm-lobby-form">
-                        <div className="input-group">
-                            <label className="input-label">Your Name</label>
-                            <input className="input" value={displayName} onChange={e => setDisplayName(e.target.value)} placeholder="Enter your name" />
-                        </div>
-                        <div className="vm-join-section">
-                            <div className="input-group" style={{ marginBottom: 0 }}>
-                                <label className="input-label">Meeting ID</label>
-                                <input className="input" value={roomId} onChange={e => setRoomId(e.target.value)} placeholder="Enter meeting ID to join" />
-                            </div>
-                            <motion.button className="btn btn-primary btn-lg vm-join-btn" whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}
-                                disabled={!roomId.trim() || !displayName.trim()}
-                                onClick={async () => {
-                                    if (!roomId.trim() || !displayName.trim()) return;
-                                    // Ensure we have a stream (may already have from lobby preview)
-                                    if (!localStreamRef.current) await getLocalStream();
-                                    connectToRoom();
-                                }}
-                            ><Video size={18} /> Join Meeting</motion.button>
-                        </div>
-                        <div className="vm-divider"><span>or</span></div>
-                        <motion.button className="btn btn-secondary btn-lg" style={{ width: '100%' }} whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}
-                            onClick={async () => { if (!displayName.trim()) { toast.error('Enter your name'); return; } await createRoom(); }}
-                        ><Radio size={18} /> Create New Meeting</motion.button>
-                    </div>
-                    <button className="btn btn-ghost" onClick={() => navigate('/dashboard')} style={{ marginTop: 12 }}>← Back to Dashboard</button>
-                </motion.div>
-            </div>
-        );
-    }
+        ws.onopen = () => toast.success('Connected to meeting');
+        ws.onclose = () => console.log("Disconnected from signaling");
+        ws.onerror = (err) => console.error("WebSocket error:", err);
 
-    // ════════════════════════════════════════════════════
-    // WAITING ROOM
-    // ════════════════════════════════════════════════════
-    if (phase === 'waiting') {
-        return (
-            <div className="vm-lobby">
-                <div className="vm-lobby-bg"><div className="vm-orb vm-orb-1" /><div className="vm-orb vm-orb-2" /></div>
-                <motion.div className="vm-lobby-card" initial={{ opacity: 0 }} animate={{ opacity: 1 }} style={{ textAlign: 'center' }}>
-                    <div className="vm-waiting-icon"><Shield size={48} /></div>
-                    <h2 style={{ color: 'var(--text-primary)', marginBottom: 8 }}>Waiting Room</h2>
-                    <p style={{ color: 'var(--text-secondary)', marginBottom: 24 }}>Please wait for the host to let you in...</p>
-                    <div className="vm-waiting-spinner" />
-                    <button className="btn btn-ghost" onClick={() => { wsRef.current?.close(); navigate('/dashboard'); }} style={{ marginTop: 24 }}>Leave</button>
-                </motion.div>
-            </div>
-        );
-    }
+        ws.onmessage = async (event) => {
+            try {
+                const data = JSON.parse(event.data);
+                switch (data.type) {
+                    case 'user-joined':
+                        handleUserJoined(data.user_id, data.display_name, stream);
+                        break;
+                    case 'signal':
+                        handleSignal(data.sender, data.payload, stream);
+                        break;
+                    case 'user-left':
+                        handleUserLeft(data.user_id, data.display_name);
+                        break;
+                    case 'chat':
+                        setChatMessages(prev => [...prev, {
+                            sender: data.sender_name || data.sender,
+                            text: data.text,
+                            isMe: false,
+                            timestamp: new Date().toISOString()
+                        }]);
+                        if (activePanel !== 'chat') setUnreadChats(c => c + 1);
+                        break;
+                    case 'reaction':
+                        showReaction(data.emoji, data.sender_name);
+                        break;
+                    case 'hand-raise':
+                        setRaisedHands(prev => {
+                            const next = new Set(prev);
+                            if (data.raised) next.add(data.sender_name || data.user_id);
+                            else next.delete(data.sender_name || data.user_id);
+                            return next;
+                        });
+                        break;
+                    case 'poll':
+                        setPolls(prev => [...prev, data.poll]);
+                        toast('📊 New poll created!');
+                        break;
+                    case 'poll-vote':
+                        setPolls(prev => prev.map(p =>
+                            p.id === data.pollId
+                                ? { ...p, votes: { ...p.votes, [data.option]: (p.votes?.[data.option] || 0) + 1 } }
+                                : p
+                        ));
+                        break;
+                    case 'whiteboard':
+                        // Handled internally by Whiteboard component
+                        break;
+                    default:
+                        break;
+                }
+            } catch (err) {
+                console.error('Message parse error:', err);
+            }
+        };
+    };
 
-    // ════════════════════════════════════════════════════
-    // MEETING VIEW
-    // ════════════════════════════════════════════════════
+    const handleUserJoined = async (userId, displayName, stream) => {
+        toast(`${displayName || 'Someone'} joined`, { icon: '👤' });
+        setParticipants(prev => {
+            if (prev.find(p => p.id === userId)) return prev;
+            return [...prev, { id: userId, name: displayName || `User ${userId}`, handRaised: false }];
+        });
+        if (!stream) return;
+        const pc = createPeerConnection(userId, stream);
+        try {
+            const offer = await pc.createOffer();
+            await pc.setLocalDescription(offer);
+            wsRef.current.send(JSON.stringify({
+                type: 'signal', target: userId,
+                payload: { type: 'offer', sdp: pc.localDescription }
+            }));
+        } catch (err) { console.error('Failed to create offer:', err); }
+    };
+
+    const handleSignal = async (senderId, payload, stream) => {
+        let pc = peerConnections.current[senderId];
+        if (!pc) pc = createPeerConnection(senderId, stream);
+        try {
+            if (payload.type === 'offer') {
+                await pc.setRemoteDescription(new RTCSessionDescription(payload.sdp));
+                const answer = await pc.createAnswer();
+                await pc.setLocalDescription(answer);
+                wsRef.current.send(JSON.stringify({
+                    type: 'signal', target: senderId,
+                    payload: { type: 'answer', sdp: pc.localDescription }
+                }));
+            } else if (payload.type === 'answer') {
+                await pc.setRemoteDescription(new RTCSessionDescription(payload.sdp));
+            } else if (payload.candidate) {
+                await pc.addIceCandidate(new RTCIceCandidate(payload.candidate));
+            }
+        } catch (err) { console.error('Signal handling error:', err); }
+    };
+
+    const createPeerConnection = (userId, stream) => {
+        const pc = new RTCPeerConnection({
+            iceServers: [
+                { urls: 'stun:stun.l.google.com:19302' },
+                { urls: 'stun:stun1.l.google.com:19302' }
+            ]
+        });
+        peerConnections.current[userId] = pc;
+        if (stream) stream.getTracks().forEach(track => pc.addTrack(track, stream));
+
+        pc.onicecandidate = (event) => {
+            if (event.candidate && wsRef.current?.readyState === WebSocket.OPEN) {
+                wsRef.current.send(JSON.stringify({
+                    type: 'signal', target: userId,
+                    payload: { candidate: event.candidate }
+                }));
+            }
+        };
+        pc.ontrack = (event) => {
+            setPeers(prev => ({ ...prev, [userId]: { stream: event.streams[0] } }));
+        };
+        return pc;
+    };
+
+    const handleUserLeft = (userId, displayName) => {
+        toast(`${displayName || 'Someone'} left`, { icon: '👋' });
+        if (peerConnections.current[userId]) {
+            peerConnections.current[userId].close();
+            delete peerConnections.current[userId];
+        }
+        setPeers(prev => { const n = { ...prev }; delete n[userId]; return n; });
+        setParticipants(prev => prev.filter(p => p.id !== userId));
+    };
+
+    /* ═══════════════════════════════════════════════
+       CONTROLS
+       ═══════════════════════════════════════════════ */
+    const toggleMic = useCallback(() => {
+        if (localStream) localStream.getAudioTracks().forEach(t => t.enabled = !micOn);
+        setMicOn(v => !v);
+    }, [localStream, micOn]);
+
+    const toggleCam = useCallback(() => {
+        if (localStream) localStream.getVideoTracks().forEach(t => t.enabled = !camOn);
+        setCamOn(v => !v);
+    }, [localStream, camOn]);
+
+    const toggleScreenShare = async () => {
+        if (screenStream) {
+            screenStream.getTracks().forEach(t => t.stop());
+            setScreenStream(null);
+            if (localStream) {
+                const videoTrack = localStream.getVideoTracks()[0];
+                Object.values(peerConnections.current).forEach(pc => {
+                    const sender = pc.getSenders().find(s => s.track?.kind === 'video');
+                    if (sender && videoTrack) sender.replaceTrack(videoTrack);
+                });
+            }
+        } else {
+            try {
+                const stream = await navigator.mediaDevices.getDisplayMedia({ video: { cursor: 'always' } });
+                setScreenStream(stream);
+                const screenTrack = stream.getVideoTracks()[0];
+                screenTrack.onended = () => {
+                    setScreenStream(null);
+                    if (localStream) {
+                        const vt = localStream.getVideoTracks()[0];
+                        Object.values(peerConnections.current).forEach(pc => {
+                            const sender = pc.getSenders().find(s => s.track?.kind === 'video');
+                            if (sender && vt) sender.replaceTrack(vt);
+                        });
+                    }
+                };
+                Object.values(peerConnections.current).forEach(pc => {
+                    const sender = pc.getSenders().find(s => s.track?.kind === 'video');
+                    if (sender) sender.replaceTrack(screenTrack);
+                });
+                toast.success('Screen sharing started');
+            } catch (err) {
+                if (err.name !== 'NotAllowedError') toast.error("Screen share failed");
+            }
+        }
+    };
+
+    const leavingRef = useRef(false);
+
+    const handleLeave = async () => {
+        if (leavingRef.current) return;
+        leavingRef.current = true;
+
+        // Stop all streams
+        if (localStream) localStream.getTracks().forEach(t => t.stop());
+        if (screenStream) screenStream.getTracks().forEach(t => t.stop());
+        if (recognitionRef.current) recognitionRef.current.stop();
+        stopRecording(true);
+        wsRef.current?.close();
+
+        // Auto-save transcript if we have captions data
+        const entries = transcriptRef.current;
+        if (entries.length > 0) {
+            const toastId = toast.loading('Saving transcript & running AI analysis...');
+            try {
+                const res = await videoMeetingAPI.saveTranscript(roomId, {
+                    title: roomInfo?.title || `Meeting ${new Date().toLocaleDateString()}`,
+                    transcript: entries,
+                    auto_analyze: true,
+                });
+                const { meeting_id, subtitle_count, analysis_status } = res.data;
+                if (analysis_status === 'analyzed') {
+                    toast.success(`Saved ${subtitle_count} lines & AI analysis complete!`, { id: toastId });
+                } else {
+                    toast.success(`Saved ${subtitle_count} lines. You can analyze later.`, { id: toastId });
+                }
+                navigate(`/meetings/${meeting_id}`);
+                return;
+            } catch (err) {
+                console.error('Auto-save failed:', err);
+                toast.error('Could not save transcript. Check meetings page.', { id: toastId });
+            }
+        }
+        navigate('/meetings');
+    };
+
+    const copyInvite = () => {
+        const link = window.location.href;
+        if (roomInfo?.meeting_code) {
+            const details = [
+                `Join my meeting!`,
+                ``,
+                `Meeting Code: ${roomInfo.meeting_code}`,
+                roomInfo.password ? `Password: ${roomInfo.password}` : null,
+                `Link: ${link}`,
+            ].filter(Boolean).join('\n');
+            navigator.clipboard.writeText(details);
+            toast.success('Meeting details copied!');
+        } else {
+            navigator.clipboard.writeText(link);
+            toast.success('Invite link copied!');
+        }
+    };
+
+    /* ═══════════════════════════════════════════════
+       CHAT
+       ═══════════════════════════════════════════════ */
+    const sendChatMessage = (text) => {
+        setChatMessages(prev => [...prev, {
+            sender: user?.full_name || 'You', text, isMe: true,
+            timestamp: new Date().toISOString()
+        }]);
+        wsRef.current?.send(JSON.stringify({ type: 'chat', text }));
+    };
+
+    /* ═══════════════════════════════════════════════
+       CAPTIONS (Web Speech API)
+       ═══════════════════════════════════════════════ */
+    const toggleCaptions = useCallback(() => {
+        if (captionsOn) {
+            if (recognitionRef.current) recognitionRef.current.stop();
+            setCaptionsOn(false);
+            toast('Captions off');
+        } else {
+            try {
+                const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+                if (!SpeechRecognition) { toast.error('Speech recognition not supported in this browser'); return; }
+
+                const recognition = new SpeechRecognition();
+                recognition.continuous = true;
+                recognition.interimResults = true;
+                recognition.lang = 'en-US';
+
+                recognition.onresult = (event) => {
+                    let finalText = '';
+                    let interimText = '';
+                    for (let i = event.resultIndex; i < event.results.length; i++) {
+                        const transcript = event.results[i][0].transcript;
+                        if (event.results[i].isFinal) finalText += transcript;
+                        else interimText += transcript;
+                    }
+
+                    if (finalText) {
+                        // Store in transcript for later analysis
+                        const elapsed = (Date.now() - meetingStartTimeRef.current) / 1000;
+                        transcriptRef.current.push({
+                            speaker: user?.full_name || 'You',
+                            text: finalText,
+                            start_time: Math.max(0, elapsed - 5),
+                            end_time: elapsed,
+                            confidence: event.results[event.resultIndex]?.[0]?.confidence || 0.9,
+                        });
+                        setCaptions(prev => {
+                            const updated = [...prev, { text: finalText, speaker: user?.full_name || 'You', time: Date.now(), final: true }];
+                            return updated.slice(-8); // Keep last 8
+                        });
+                    } else if (interimText) {
+                        setCaptions(prev => {
+                            const filtered = prev.filter(c => c.final);
+                            return [...filtered, { text: interimText, speaker: user?.full_name || 'You', time: Date.now(), final: false }];
+                        });
+                    }
+                };
+
+                recognition.onerror = (e) => {
+                    if (e.error !== 'no-speech') console.error('Speech recognition error:', e.error);
+                };
+                recognition.onend = () => {
+                    // Auto-restart if user hasn't manually turned off
+                    if (captionsOn && recognitionRef.current) {
+                        try { recognitionRef.current.start(); } catch (e) { /* already running */ }
+                    }
+                };
+
+                recognition.start();
+                recognitionRef.current = recognition;
+                setCaptionsOn(true);
+                toast.success('Captions on');
+            } catch (e) {
+                toast.error('Failed to start captions');
+            }
+        }
+    }, [captionsOn, user]);
+
+    /* ═══════════════════════════════════════════════
+       RECORDING (MediaRecorder API)
+       ═══════════════════════════════════════════════ */
+    const toggleRecording = useCallback(() => {
+        if (isRecording) stopRecording(false);
+        else startRecording();
+    }, [isRecording]);
+
+    const startRecording = () => {
+        try {
+            const canvas = document.createElement('canvas');
+            canvas.width = 1280;
+            canvas.height = 720;
+            const ctx = canvas.getContext('2d');
+
+            // Capture local video frame-by-frame
+            const captureStream = canvas.captureStream(30);
+
+            // Mix audio from local stream
+            if (localStreamRef.current) {
+                const audioTracks = localStreamRef.current.getAudioTracks();
+                audioTracks.forEach(t => captureStream.addTrack(t.clone()));
+            }
+
+            // Draw video frames
+            const drawFrame = () => {
+                if (!mediaRecorderRef.current || mediaRecorderRef.current.state === 'inactive') return;
+                ctx.fillStyle = '#0f1117';
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+                // Draw local video
+                if (localVideoRef.current && localVideoRef.current.readyState >= 2) {
+                    try { ctx.drawImage(localVideoRef.current, 0, 0, canvas.width, canvas.height); } catch (e) { /* ignore */ }
+                }
+                requestAnimationFrame(drawFrame);
+            };
+
+            const mimeTypes = ['video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm'];
+            let selectedMimeType = mimeTypes.find(t => MediaRecorder.isTypeSupported(t)) || 'video/webm';
+
+            const recorder = new MediaRecorder(captureStream, { mimeType: selectedMimeType, videoBitsPerSecond: 2500000 });
+            recordedChunksRef.current = [];
+
+            recorder.ondataavailable = (e) => { if (e.data.size > 0) recordedChunksRef.current.push(e.data); };
+            recorder.onstop = () => {
+                if (recordedChunksRef.current.length > 0) {
+                    const blob = new Blob(recordedChunksRef.current, { type: selectedMimeType });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `meeting-recording-${new Date().toISOString().slice(0, 19).replace(/:/g, '-')}.webm`;
+                    a.click();
+                    URL.revokeObjectURL(url);
+                    toast.success('Recording saved!');
+                }
+            };
+
+            recorder.start(1000);
+            mediaRecorderRef.current = recorder;
+            drawFrame();
+
+            // Timer
+            setRecordingTime(0);
+            recordingTimerRef.current = setInterval(() => setRecordingTime(t => t + 1), 1000);
+
+            setIsRecording(true);
+            toast.success('Recording started');
+        } catch (e) {
+            console.error('Recording failed:', e);
+            toast.error('Failed to start recording');
+        }
+    };
+
+    const stopRecording = (silent = false) => {
+        if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+            mediaRecorderRef.current.stop();
+        }
+        mediaRecorderRef.current = null;
+        clearInterval(recordingTimerRef.current);
+        setIsRecording(false);
+        setRecordingTime(0);
+        if (!silent) toast('Recording stopped');
+    };
+
+    /* ═══════════════════════════════════════════════
+       SAVE TRANSCRIPT & ANALYZE
+       ═══════════════════════════════════════════════ */
+    const saveTranscriptAndAnalyze = async () => {
+        const entries = transcriptRef.current;
+        if (!entries.length) {
+            toast.error('No transcript data to save. Enable captions and speak first.');
+            return;
+        }
+        setSavingTranscript(true);
+        const toastId = toast.loading(`Saving ${entries.length} transcript entries & running AI analysis...`);
+        try {
+            const res = await videoMeetingAPI.saveTranscript(roomId, {
+                title: `Video Meeting (${new Date().toLocaleDateString()})`,
+                transcript: entries,
+                auto_analyze: true,
+            });
+            const { meeting_id, subtitle_count, analysis_status } = res.data;
+            if (analysis_status === 'analyzed') {
+                toast.success(`Saved ${subtitle_count} lines & analysis complete!`, { id: toastId });
+            } else if (analysis_status === 'analysis_failed') {
+                toast.success(`Saved ${subtitle_count} lines. Analysis failed — you can retry later.`, { id: toastId });
+            } else {
+                toast.success(`Saved ${subtitle_count} lines.`, { id: toastId });
+            }
+            // Navigate to the meeting detail page
+            navigate(`/meetings/${meeting_id}`);
+        } catch (err) {
+            console.error('Save transcript failed:', err);
+            toast.error(err.response?.data?.detail || 'Failed to save transcript', { id: toastId });
+        } finally {
+            setSavingTranscript(false);
+        }
+    };
+
+    /* ═══════════════════════════════════════════════
+       HAND RAISE & REACTIONS
+       ═══════════════════════════════════════════════ */
+    const toggleHandRaise = useCallback(() => {
+        const newState = !handRaised;
+        setHandRaised(newState);
+        wsRef.current?.send(JSON.stringify({
+            type: 'hand-raise', raised: newState,
+            sender_name: user?.full_name || 'You'
+        }));
+        toast(newState ? '✋ Hand raised' : '✋ Hand lowered');
+    }, [handRaised, user]);
+
+    const sendReaction = (emoji) => {
+        showReaction(emoji, user?.full_name || 'You');
+        wsRef.current?.send(JSON.stringify({
+            type: 'reaction', emoji,
+            sender_name: user?.full_name || 'You'
+        }));
+    };
+
+    const showReaction = (emoji, senderName) => {
+        const id = Date.now() + Math.random();
+        setReactions(prev => [...prev, { id, emoji, sender: senderName }]);
+        setTimeout(() => setReactions(prev => prev.filter(r => r.id !== id)), 3000);
+    };
+
+    /* ═══════════════════════════════════════════════
+       POLLS
+       ═══════════════════════════════════════════════ */
+    const createPoll = () => {
+        if (!newPollQuestion.trim() || newPollOptions.filter(o => o.trim()).length < 2) {
+            toast.error('Need a question and at least 2 options');
+            return;
+        }
+        const poll = {
+            id: Date.now().toString(),
+            question: newPollQuestion,
+            options: newPollOptions.filter(o => o.trim()),
+            votes: {},
+            creator: user?.full_name || 'You'
+        };
+        setPolls(prev => [...prev, poll]);
+        wsRef.current?.send(JSON.stringify({ type: 'poll', poll }));
+        setNewPollQuestion('');
+        setNewPollOptions(['', '']);
+        setShowPollCreator(false);
+        toast.success('Poll created!');
+    };
+
+    const votePoll = (pollId, option) => {
+        setPolls(prev => prev.map(p =>
+            p.id === pollId
+                ? { ...p, votes: { ...p.votes, [option]: (p.votes?.[option] || 0) + 1 }, myVote: option }
+                : p
+        ));
+        wsRef.current?.send(JSON.stringify({ type: 'poll-vote', pollId, option }));
+    };
+
+    /* ═══════════════════════════════════════════════
+       FULLSCREEN
+       ═══════════════════════════════════════════════ */
+    const toggleFullscreen = () => {
+        if (!document.fullscreenElement) {
+            containerRef.current?.requestFullscreen?.();
+            setIsFullscreen(true);
+        } else {
+            document.exitFullscreen?.();
+            setIsFullscreen(false);
+        }
+    };
+
+    /* ═══════════════════════════════════════════════
+       PANEL TOGGLE
+       ═══════════════════════════════════════════════ */
+    const togglePanel = (panel) => {
+        setActivePanel(prev => prev === panel ? null : panel);
+        if (panel === 'chat') setUnreadChats(0);
+        setShowMoreMenu(false);
+    };
+
+    /* ═══════════════════════════════════════════════
+       PARTICIPANT COUNT
+       ═══════════════════════════════════════════════ */
+    const peerCount = Object.keys(peers).length;
+    const totalParticipants = peerCount + 1;
+
+    // Calculate grid class
+    const getGridClass = () => {
+        if (layout === 'speaker') return 'vm-video-grid speaker-mode';
+        const total = totalParticipants + (screenStream ? 1 : 0);
+        if (total <= 1) return 'vm-video-grid grid-1';
+        if (total <= 2) return 'vm-video-grid grid-2';
+        if (total <= 4) return 'vm-video-grid grid-4';
+        if (total <= 6) return 'vm-video-grid grid-6';
+        return 'vm-video-grid grid-many';
+    };
+
+    /* ═══════════════════════════════════════════════
+       RENDER
+       ═══════════════════════════════════════════════ */
     return (
-        <div className="vm-meeting">
-            {/* ── Video Grid ── */}
-            <div className={`vm-grid-area ${activePanel ? 'sidebar-open' : ''}`}>
-                <div className={`vm-video-grid ${viewMode === 'speaker' && pinnedUser ? 'speaker-mode' : gridClass}`}>
-                    {/* Local Video */}
-                    <div className={`vm-video-tile ${pinnedUser === 'local' ? 'pinned' : ''} ${viewMode === 'speaker' && pinnedUser && pinnedUser !== 'local' ? 'mini' : ''}`}
-                        onClick={() => setPinnedUser(pinnedUser === 'local' ? null : 'local')}
-                    >
-                        <video ref={localVideoRef} autoPlay muted playsInline className="vm-video" style={{ filter: bgBlur ? 'blur(8px)' : 'none' }} />
-                        {!videoOn && <div className="vm-video-avatar"><span>{(displayName || 'U')[0].toUpperCase()}</span></div>}
-                        {handRaised && <div className="vm-hand-indicator">✋</div>}
-                        <div className="vm-video-label">
-                            <span className="vm-video-name">You {screenSharing ? '(Screen)' : ''}</span>
-                            <div className="vm-video-indicators">
-                                {!audioOn && <MicOff size={12} className="indicator-off" />}
-                                {!videoOn && <VideoOff size={12} className="indicator-off" />}
-                            </div>
-                        </div>
+        <div className="vm-meeting-room" ref={containerRef}>
+            {/* ── Floating Reactions ── */}
+            <div className="vm-reactions-overlay">
+                {reactions.map(r => (
+                    <div key={r.id} className="vm-floating-reaction">
+                        <span className="vm-floating-emoji">{r.emoji}</span>
+                        <span className="vm-floating-name">{r.sender}</span>
                     </div>
-                    {/* Remote Videos */}
-                    {Object.entries(remoteStreams).map(([uid, stream]) => {
-                        const pInfo = participants.find(p => p.user_id === uid);
-                        const name = pInfo?.display_name || 'Guest';
-                        return (
-                            <div key={uid}
-                                className={`vm-video-tile ${pinnedUser === uid ? 'pinned' : ''} ${viewMode === 'speaker' && pinnedUser && pinnedUser !== uid ? 'mini' : ''}`}
-                                onClick={() => setPinnedUser(pinnedUser === uid ? null : uid)}
-                            >
-                                <RemoteVideo stream={stream} />
-                                {pInfo?.video_on === false && <div className="vm-video-avatar"><span>{name[0].toUpperCase()}</span></div>}
-                                {pInfo?.hand_raised && <div className="vm-hand-indicator">✋</div>}
+                ))}
+            </div>
+
+            {/* ── Top Bar ── */}
+            <div className="vm-topbar">
+                <div className="vm-topbar-left">
+                    <div className="vm-meeting-info">
+                        <span className="vm-meeting-title">{roomInfo?.title || 'Meeting'}</span>
+                        <span className="vm-meeting-time">
+                            <Timer size={12} /> {formatTime(meetingDuration)}
+                        </span>
+                    </div>
+                    {roomInfo?.meeting_code && (
+                        <div className="vm-meeting-credentials">
+                            <span className="vm-meeting-code" title="Meeting Code">
+                                <Hash size={11} /> {roomInfo.meeting_code}
+                            </span>
+                            {roomInfo.password && (
+                                <span className="vm-meeting-pwd" title="Meeting Password">
+                                    <Lock size={11} /> {roomInfo.password}
+                                </span>
+                            )}
+                        </div>
+                    )}
+                    {isRecording && (
+                        <div className="vm-recording-badge">
+                            <Circle size={8} fill="#ef4444" color="#ef4444" />
+                            <span>REC {formatTime(recordingTime)}</span>
+                        </div>
+                    )}
+                </div>
+                <div className="vm-topbar-right">
+                    {raisedHands.size > 0 && (
+                        <span className="vm-raised-count">✋ {raisedHands.size}</span>
+                    )}
+                    <span className="vm-participant-count">
+                        <Users size={14} /> {totalParticipants}
+                    </span>
+                    <button className="vm-topbar-btn" onClick={toggleFullscreen} title="Toggle Fullscreen">
+                        {isFullscreen ? <Minimize size={16} /> : <Maximize size={16} />}
+                    </button>
+                    <button className="vm-topbar-btn" onClick={copyInvite} title="Copy invite details">
+                        <Copy size={16} />
+                    </button>
+                </div>
+            </div>
+
+            {/* ── Main Content Area ── */}
+            <div className="vm-main-area">
+                {/* Video Grid */}
+                <div className={`vm-content ${activePanel ? 'with-panel' : ''}`}>
+                    <div className={getGridClass()}>
+                        {/* Screen Share */}
+                        {screenStream && (
+                            <div className="vm-video-tile screen-share-tile">
+                                <video
+                                    ref={ref => { if (ref) ref.srcObject = screenStream; }}
+                                    autoPlay muted playsInline
+                                />
                                 <div className="vm-video-label">
-                                    <span className="vm-video-name">{name} {pInfo?.is_host ? '⭐' : ''} {pInfo?.screen_sharing ? '(Screen)' : ''}</span>
-                                    <div className="vm-video-indicators">
-                                        {!pInfo?.audio_on && <MicOff size={12} className="indicator-off" />}
-                                        {!pInfo?.video_on && <VideoOff size={12} className="indicator-off" />}
+                                    <span className="vm-video-name"><Monitor size={12} /> Screen Share</span>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Local Video */}
+                        <div className={`vm-video-tile ${!camOn ? 'cam-off' : ''}`}>
+                            <video ref={localVideoRef} autoPlay muted playsInline style={{ transform: 'scaleX(-1)' }} />
+                            {!camOn && (
+                                <div className="vm-avatar-placeholder">
+                                    <div className="vm-avatar-circle">
+                                        {(user?.full_name || 'U')[0].toUpperCase()}
                                     </div>
                                 </div>
-                                {/* Host: kick & mute on hover */}
-                                {isHost && uid !== userIdRef.current && (
-                                    <div className="vm-tile-host-actions">
-                                        <button onClick={(e) => { e.stopPropagation(); hostAction('mute-user', { target_user: uid }); }} title="Mute"><VolumeX size={14} /></button>
-                                        <button onClick={(e) => { e.stopPropagation(); hostAction('remove-user', { target_user: uid }); }} title="Remove"><UserX size={14} /></button>
-                                    </div>
-                                )}
+                            )}
+                            <div className="vm-video-label">
+                                <span className="vm-video-name">
+                                    You {handRaised && '✋'}
+                                </span>
+                                <div className="vm-video-indicators">
+                                    {!micOn && <MicOff size={12} />}
+                                    {!camOn && <VideoOff size={12} />}
+                                </div>
                             </div>
-                        );
-                    })}
-                </div>
-
-                {/* ── Topbar ── */}
-                <div className="vm-topbar">
-                    <div className="vm-topbar-left">
-                        {isRecording && <span className="vm-rec-badge"><Circle size={10} className="vm-rec-dot" /> REC {formatTime(recordingTime)}</span>}
-                        <Radio size={14} className="vm-live-dot" />
-                        <span className="vm-room-id">{roomId}</span>
-                        <button className="vm-copy-btn" onClick={copyLink}>{copied ? <Check size={14} /> : <Copy size={14} />}</button>
-                        {meetingSettings.locked && <Lock size={14} style={{ color: '#eab308' }} title="Meeting Locked" />}
-                    </div>
-                    <div className="vm-topbar-center"><Clock size={14} /><span>{formatTime(duration)}</span></div>
-                    <div className="vm-topbar-right">
-                        {raisedHands.length > 0 && <span className="vm-raised-count" title={raisedHands.map(p => p.display_name).join(', ')}>✋ {raisedHands.length}</span>}
-                        <span className="vm-participant-count"><Users size={14} /> {participants.length}</span>
-                        <button className="vm-topbar-btn" onClick={() => setViewMode(viewMode === 'gallery' ? 'speaker' : 'gallery')}
-                            title={viewMode === 'gallery' ? 'Speaker View' : 'Gallery View'}
-                        ><Layers size={16} /></button>
-                        <button className="vm-topbar-btn" onClick={toggleFullscreen}>{isFullscreen ? <Minimize size={16} /> : <Maximize size={16} />}</button>
-                    </div>
-                </div>
-            </div>
-
-            {/* ── Sidebar Panel ── */}
-            <AnimatePresence>
-                {activePanel && (
-                    <motion.div className="vm-sidebar" initial={{ width: 0, opacity: 0 }} animate={{ width: 360, opacity: 1 }} exit={{ width: 0, opacity: 0 }} transition={{ duration: 0.2 }}>
-                        <div className="vm-sidebar-header">
-                            <h3>{activePanel === 'chat' ? 'Chat' : activePanel === 'participants' ? 'Participants' : activePanel === 'whiteboard' ? 'Whiteboard' : activePanel === 'polls' ? 'Polls' : activePanel === 'notes' ? 'Notes' : activePanel === 'shortcuts' ? 'Shortcuts' : activePanel === 'settings' ? 'Host Settings' : ''}</h3>
-                            <button className="btn btn-ghost btn-icon" onClick={() => setActivePanel(null)}><X size={18} /></button>
                         </div>
 
-                        {/* ── Participants Panel ── */}
-                        {activePanel === 'participants' && (
-                            <div className="vm-panel-content">
-                                {/* Waiting Room */}
-                                {isHost && waitingList.length > 0 && (
-                                    <div className="vm-waiting-section">
-                                        <div className="vm-section-title"><AlertCircle size={14} /> Waiting Room ({waitingList.length})</div>
-                                        {waitingList.map(w => (
-                                            <div key={w.user_id} className="vm-participant-item">
-                                                <div className="vm-participant-avatar">{(w.display_name || 'G')[0].toUpperCase()}</div>
-                                                <span className="vm-participant-name">{w.display_name}</span>
-                                                <div className="vm-admit-btns">
-                                                    <button className="btn btn-xs btn-primary" onClick={() => hostAction('admit-user', { target_user: w.user_id })}>Admit</button>
-                                                    <button className="btn btn-xs btn-ghost" onClick={() => hostAction('reject-user', { target_user: w.user_id })}>Deny</button>
+                        {/* Remote Peers */}
+                        {Object.entries(peers).map(([id, peer]) => (
+                            <div key={id} className="vm-video-tile">
+                                <VideoPlayer stream={peer.stream} />
+                                <div className="vm-video-label">
+                                    <span className="vm-video-name">
+                                        {participants.find(p => String(p.id) === String(id))?.name || `User ${id}`}
+                                        {raisedHands.has(participants.find(p => String(p.id) === String(id))?.name) && ' ✋'}
+                                    </span>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+
+                    {/* ── Captions Overlay ── */}
+                    {captionsOn && captions.length > 0 && (
+                        <div className="vm-captions-overlay">
+                            {captions.slice(-3).map((cap, i) => (
+                                <div key={i} className={`vm-caption-line ${cap.final ? 'final' : 'interim'}`}>
+                                    <span className="vm-caption-speaker">{cap.speaker}:</span>
+                                    <span className="vm-caption-text">{cap.text}</span>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                </div>
+
+                {/* ── Side Panel ── */}
+                {activePanel && (
+                    <div className="vm-sidebar">
+                        <div className="vm-sidebar-header">
+                            <h3>
+                                {activePanel === 'chat' && '💬 Chat'}
+                                {activePanel === 'participants' && '👥 Participants'}
+                                {activePanel === 'whiteboard' && '🎨 Whiteboard'}
+                                {activePanel === 'polls' && '📊 Polls'}
+                                {activePanel === 'qa' && '❓ Q&A'}
+                                {activePanel === 'notepad' && '📝 Notepad'}
+                            </h3>
+                            <button className="vm-sidebar-close" onClick={() => setActivePanel(null)}>
+                                <X size={18} />
+                            </button>
+                        </div>
+                        <div className="vm-sidebar-body">
+                            {/* Chat Panel */}
+                            {activePanel === 'chat' && (
+                                <Chat
+                                    ws={wsRef.current}
+                                    messages={chatMessages}
+                                    isCompact={false}
+                                    showTimestamps={true}
+                                    onSendMessage={sendChatMessage}
+                                />
+                            )}
+
+                            {/* Participants Panel */}
+                            {activePanel === 'participants' && (
+                                <div className="vm-participants-list">
+                                    <div className="vm-participant-item you">
+                                        <div className="vm-participant-avatar">{(user?.full_name || 'U')[0].toUpperCase()}</div>
+                                        <div className="vm-participant-info">
+                                            <span className="vm-participant-name">{user?.full_name || 'You'} (You)</span>
+                                            <span className="vm-participant-role">Host</span>
+                                        </div>
+                                        <div className="vm-participant-status">
+                                            {handRaised && <span>✋</span>}
+                                            {micOn ? <Mic size={14} /> : <MicOff size={14} className="muted" />}
+                                            {camOn ? <Video size={14} /> : <VideoOff size={14} className="muted" />}
+                                        </div>
+                                    </div>
+                                    {participants.map(p => (
+                                        <div key={p.id} className="vm-participant-item">
+                                            <div className="vm-participant-avatar">{(p.name || 'U')[0].toUpperCase()}</div>
+                                            <div className="vm-participant-info">
+                                                <span className="vm-participant-name">{p.name}</span>
+                                            </div>
+                                            <div className="vm-participant-status">
+                                                {raisedHands.has(p.name) && <span>✋</span>}
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+
+                            {/* Whiteboard Panel */}
+                            {activePanel === 'whiteboard' && (
+                                <div style={{ flex: 1, minHeight: 400 }}>
+                                    <Whiteboard ws={wsRef.current} isActive={activePanel === 'whiteboard'} />
+                                </div>
+                            )}
+
+                            {/* Polls Panel */}
+                            {activePanel === 'polls' && (
+                                <div className="vm-polls-panel">
+                                    {!showPollCreator ? (
+                                        <button className="vm-create-poll-btn" onClick={() => setShowPollCreator(true)}>
+                                            + Create Poll
+                                        </button>
+                                    ) : (
+                                        <div className="vm-poll-creator">
+                                            <input
+                                                className="vm-poll-input"
+                                                placeholder="Poll question..."
+                                                value={newPollQuestion}
+                                                onChange={e => setNewPollQuestion(e.target.value)}
+                                            />
+                                            {newPollOptions.map((opt, i) => (
+                                                <input
+                                                    key={i}
+                                                    className="vm-poll-input"
+                                                    placeholder={`Option ${i + 1}`}
+                                                    value={opt}
+                                                    onChange={e => {
+                                                        const nOpts = [...newPollOptions];
+                                                        nOpts[i] = e.target.value;
+                                                        setNewPollOptions(nOpts);
+                                                    }}
+                                                />
+                                            ))}
+                                            <div className="vm-poll-creator-actions">
+                                                <button className="vm-poll-add-opt" onClick={() => setNewPollOptions(prev => [...prev, ''])}>
+                                                    + Add Option
+                                                </button>
+                                                <div style={{ display: 'flex', gap: 8 }}>
+                                                    <button className="vm-poll-cancel" onClick={() => setShowPollCreator(false)}>Cancel</button>
+                                                    <button className="vm-poll-submit" onClick={createPoll}>Create</button>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    )}
+                                    {polls.length === 0 && !showPollCreator && (
+                                        <div className="vm-polls-empty">
+                                            <BarChart3 size={32} strokeWidth={1} />
+                                            <p>No polls yet</p>
+                                        </div>
+                                    )}
+                                    {polls.map(poll => (
+                                        <div key={poll.id} className="vm-poll-card">
+                                            <h4 className="vm-poll-question">{poll.question}</h4>
+                                            <p className="vm-poll-by">by {poll.creator}</p>
+                                            <div className="vm-poll-options">
+                                                {poll.options.map(opt => {
+                                                    const totalVotes = Object.values(poll.votes || {}).reduce((a, b) => a + b, 0);
+                                                    const optVotes = poll.votes?.[opt] || 0;
+                                                    const pct = totalVotes > 0 ? Math.round((optVotes / totalVotes) * 100) : 0;
+                                                    return (
+                                                        <button
+                                                            key={opt}
+                                                            className={`vm-poll-option ${poll.myVote === opt ? 'voted' : ''}`}
+                                                            onClick={() => !poll.myVote && votePoll(poll.id, opt)}
+                                                            disabled={!!poll.myVote}
+                                                        >
+                                                            <span className="vm-poll-opt-text">{opt}</span>
+                                                            <span className="vm-poll-opt-pct">{pct}%</span>
+                                                            <div className="vm-poll-opt-bar" style={{ width: `${pct}%` }} />
+                                                        </button>
+                                                    );
+                                                })}
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+
+                            {/* Q&A Panel */}
+                            {activePanel === 'qa' && (
+                                <div className="vm-qa-panel">
+                                    <div className="vm-qa-list">
+                                        {questions.length === 0 && (
+                                            <div className="vm-polls-empty">
+                                                <HelpCircle size={32} strokeWidth={1} />
+                                                <p>No questions yet</p>
+                                            </div>
+                                        )}
+                                        {questions.map((q, i) => (
+                                            <div key={i} className="vm-qa-item">
+                                                <div className="vm-qa-text">{q.text}</div>
+                                                <div className="vm-qa-meta">
+                                                    <span className="vm-qa-author">{q.author}</span>
+                                                    <button
+                                                        className={`vm-qa-upvote ${q.upvoted ? 'voted' : ''}`}
+                                                        onClick={() => {
+                                                            setQuestions(prev => prev.map((qn, idx) =>
+                                                                idx === i ? { ...qn, votes: (qn.votes || 0) + (qn.upvoted ? -1 : 1), upvoted: !qn.upvoted } : qn
+                                                            ));
+                                                        }}
+                                                    >
+                                                        <ChevronUp size={14} /> {q.votes || 0}
+                                                    </button>
                                                 </div>
                                             </div>
                                         ))}
                                     </div>
-                                )}
-                                <div className="vm-section-title"><Users size={14} /> In Meeting ({participants.length})</div>
-                                {participants.map(p => (
-                                    <div key={p.user_id} className="vm-participant-item">
-                                        <div className="vm-participant-avatar">{(p.display_name || 'G')[0].toUpperCase()}</div>
-                                        <div className="vm-participant-info">
-                                            <span className="vm-participant-name">
-                                                {p.display_name}{p.is_host && <span className="vm-host-badge">Host</span>}{p.user_id === userIdRef.current && ' (You)'}
-                                            </span>
-                                        </div>
-                                        <div className="vm-participant-status">
-                                            {p.hand_raised && <span style={{ fontSize: '1rem' }}>✋</span>}
-                                            {p.audio_on ? <Mic size={14} /> : <MicOff size={14} className="indicator-off" />}
-                                            {p.video_on ? <Video size={14} /> : <VideoOff size={14} className="indicator-off" />}
-                                        </div>
-                                        {isHost && p.user_id !== userIdRef.current && (
-                                            <div className="vm-participant-actions">
-                                                <button className="vm-small-btn" onClick={() => hostAction('mute-user', { target_user: p.user_id })} title="Mute"><VolumeX size={12} /></button>
-                                                <button className="vm-small-btn danger" onClick={() => hostAction('remove-user', { target_user: p.user_id })} title="Remove"><UserX size={12} /></button>
-                                            </div>
-                                        )}
-                                    </div>
-                                ))}
-                                {isHost && (
-                                    <div className="vm-host-bulk-actions">
-                                        <button className="btn btn-xs btn-secondary" onClick={() => hostAction('mute-all')}><VolumeX size={12} /> Mute All</button>
-                                        <button className="btn btn-xs btn-secondary" onClick={() => hostAction('lower-all-hands')}>👇 Lower All Hands</button>
-                                    </div>
-                                )}
-                            </div>
-                        )}
-
-                        {/* ── Chat Panel ── */}
-                        {activePanel === 'chat' && (
-                            <>
-                                <div className="vm-chat-messages">
-                                    {chatMessages.length === 0 ? (
-                                        <div className="vm-chat-empty"><MessageSquare size={32} style={{ opacity: 0.3 }} /><p>No messages yet</p></div>
-                                    ) : chatMessages.map((msg, i) => (
-                                        <div key={i} className={`vm-chat-msg ${msg.user_id === userIdRef.current ? 'own' : ''}`}>
-                                            <div className="vm-chat-msg-header">
-                                                <span className="vm-chat-sender">{msg.display_name}</span>
-                                                <span className="vm-chat-time">{msg.timestamp ? new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}</span>
-                                            </div>
-                                            <div className="vm-chat-msg-text">{msg.message}</div>
-                                        </div>
-                                    ))}
-                                    <div ref={chatEndRef} />
-                                </div>
-                                <form className="vm-chat-input" onSubmit={sendChat}>
-                                    <input className="input" placeholder="Type a message…" value={chatInput} onChange={e => setChatInput(e.target.value)} />
-                                    <button className="btn btn-primary btn-icon" type="submit"><Send size={16} /></button>
-                                </form>
-                            </>
-                        )}
-
-                        {/* ── Whiteboard Panel ── */}
-                        {activePanel === 'whiteboard' && (
-                            <div className="vm-panel-content vm-wb-panel">
-                                <div className="vm-wb-toolbar">
-                                    <button className={`vm-wb-btn ${wbTool === 'pen' ? 'active' : ''}`} onClick={() => setWbTool('pen')}><Pencil size={14} /></button>
-                                    <button className={`vm-wb-btn ${wbTool === 'eraser' ? 'active' : ''}`} onClick={() => setWbTool('eraser')}><Eraser size={14} /></button>
-                                    <div className="vm-wb-colors">
-                                        {['#ffffff', '#ef4444', '#22c55e', '#3b82f6', '#eab308', '#a855f7'].map(c => (
-                                            <button key={c} className={`vm-wb-color ${wbColor === c ? 'active' : ''}`} style={{ background: c }} onClick={() => { setWbColor(c); setWbTool('pen'); }} />
-                                        ))}
-                                    </div>
-                                    <select className="vm-wb-size" value={wbWidth} onChange={e => setWbWidth(Number(e.target.value))}>
-                                        <option value={2}>Thin</option><option value={4}>Medium</option><option value={8}>Thick</option>
-                                    </select>
-                                    <button className="vm-wb-btn" onClick={() => { clearCanvas(); wsRef.current?.send(JSON.stringify({ type: 'whiteboard-clear' })); }}><Trash2 size={14} /></button>
-                                </div>
-                                <canvas ref={canvasRef} width={640} height={480} className="vm-wb-canvas"
-                                    onMouseDown={handleCanvasMouseDown} onMouseMove={handleCanvasMouseMove}
-                                    onMouseUp={handleCanvasMouseUp} onMouseLeave={handleCanvasMouseUp} />
-                            </div>
-                        )}
-
-                        {/* ── Polls Panel ── */}
-                        {activePanel === 'polls' && (
-                            <div className="vm-panel-content">
-                                {/* Create Poll */}
-                                <div className="vm-poll-create">
-                                    <div className="vm-section-title"><BarChart3 size={14} /> Create Poll</div>
-                                    <input className="input" placeholder="Question" value={newPollQuestion} onChange={e => setNewPollQuestion(e.target.value)} style={{ marginBottom: 8 }} />
-                                    {newPollOptions.map((opt, i) => (
-                                        <input key={i} className="input" placeholder={`Option ${i + 1}`} value={opt}
-                                            onChange={e => { const o = [...newPollOptions]; o[i] = e.target.value; setNewPollOptions(o); }}
-                                            style={{ marginBottom: 4, fontSize: '0.8rem' }} />
-                                    ))}
-                                    <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
-                                        <button className="btn btn-xs btn-ghost" onClick={() => setNewPollOptions([...newPollOptions, ''])}>+ Option</button>
-                                        <button className="btn btn-xs btn-primary" onClick={createPoll}>Create</button>
+                                    <div className="vm-qa-input-row">
+                                        <input
+                                            className="vm-qa-input"
+                                            placeholder="Ask a question..."
+                                            value={newQuestion}
+                                            onChange={e => setNewQuestion(e.target.value)}
+                                            onKeyDown={e => {
+                                                if (e.key === 'Enter' && newQuestion.trim()) {
+                                                    setQuestions(prev => [...prev, {
+                                                        text: newQuestion.trim(),
+                                                        author: user?.full_name || 'You',
+                                                        votes: 0,
+                                                        upvoted: false,
+                                                    }]);
+                                                    setNewQuestion('');
+                                                }
+                                            }}
+                                        />
+                                        <button
+                                            className="vm-qa-send"
+                                            onClick={() => {
+                                                if (newQuestion.trim()) {
+                                                    setQuestions(prev => [...prev, {
+                                                        text: newQuestion.trim(),
+                                                        author: user?.full_name || 'You',
+                                                        votes: 0,
+                                                        upvoted: false,
+                                                    }]);
+                                                    setNewQuestion('');
+                                                }
+                                            }}
+                                        >
+                                            <Send size={16} />
+                                        </button>
                                     </div>
                                 </div>
-                                {/* Active Polls */}
-                                {Object.values(polls).map(poll => (
-                                    <div key={poll.poll_id} className={`vm-poll-card ${poll.active ? '' : 'ended'}`}>
-                                        <div className="vm-poll-question">{poll.question}</div>
-                                        {poll.options.map((opt, i) => {
-                                            const pct = poll.total_votes > 0 ? Math.round((poll.vote_counts[i] / poll.total_votes) * 100) : 0;
-                                            return (
-                                                <button key={i} className="vm-poll-option" onClick={() => poll.active && votePoll(poll.poll_id, i)} disabled={!poll.active}>
-                                                    <span>{opt}</span>
-                                                    <div className="vm-poll-bar" style={{ width: `${pct}%` }} />
-                                                    <span className="vm-poll-pct">{pct}% ({poll.vote_counts[i]})</span>
-                                                </button>
-                                            );
-                                        })}
-                                        <div className="vm-poll-footer">
-                                            <span>{poll.total_votes} vote{poll.total_votes !== 1 ? 's' : ''}</span>
-                                            {poll.active && (isHost || poll.creator === userIdRef.current) && (
-                                                <button className="btn btn-xs btn-ghost" onClick={() => wsRef.current?.send(JSON.stringify({ type: 'end-poll', poll_id: poll.poll_id }))}>End Poll</button>
-                                            )}
-                                        </div>
-                                    </div>
-                                ))}
-                            </div>
-                        )}
+                            )}
 
-                        {/* ── Notes Panel ── */}
-                        {activePanel === 'notes' && (
-                            <div className="vm-panel-content">
-                                <textarea className="vm-notes-textarea" placeholder="Take your meeting notes here…"
-                                    value={meetingNotes} onChange={e => setMeetingNotes(e.target.value)} />
-                                <button className="btn btn-xs btn-secondary" style={{ marginTop: 8 }} onClick={() => {
-                                    const blob = new Blob([meetingNotes], { type: 'text/plain' });
-                                    const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
-                                    a.download = `meeting-notes-${roomId}.txt`; a.click();
-                                    toast.success('Notes downloaded');
-                                }}><Download size={12} /> Download Notes</button>
-                            </div>
-                        )}
-
-                        {/* ── Keyboard Shortcuts ── */}
-                        {activePanel === 'shortcuts' && (
-                            <div className="vm-panel-content">
-                                <div className="vm-shortcuts-list">
-                                    {[
-                                        ['M', 'Toggle Mute'], ['V', 'Toggle Video'], ['H', 'Raise/Lower Hand'],
-                                        ['C', 'Toggle Chat'], ['P', 'Toggle Participants'], ['F11', 'Fullscreen'],
-                                    ].map(([key, desc]) => (
-                                        <div key={key} className="vm-shortcut-row">
-                                            <kbd className="vm-kbd">{key}</kbd>
-                                            <span>{desc}</span>
-                                        </div>
-                                    ))}
-                                </div>
-                            </div>
-                        )}
-
-                        {/* ── Host Settings Panel ── */}
-                        {activePanel === 'settings' && isHost && (
-                            <div className="vm-panel-content">
-                                <div className="vm-section-title"><Settings size={14} /> Meeting Settings</div>
-                                <div className="vm-setting-row">
-                                    <span>Waiting Room</span>
-                                    <button className={`vm-toggle ${meetingSettings.waiting_room_enabled ? 'on' : ''}`}
-                                        onClick={() => hostAction('toggle-waiting-room', { enabled: !meetingSettings.waiting_room_enabled })}>
-                                        {meetingSettings.waiting_room_enabled ? 'ON' : 'OFF'}
+                            {/* Notepad Panel */}
+                            {activePanel === 'notepad' && (
+                                <div className="vm-notepad-panel">
+                                    <textarea
+                                        className="vm-notepad-textarea"
+                                        value={notepadText}
+                                        onChange={e => setNotepadText(e.target.value)}
+                                        placeholder="Type your meeting notes here..."
+                                        spellCheck={false}
+                                    />
+                                    <button
+                                        className="vm-notepad-copy"
+                                        onClick={() => {
+                                            navigator.clipboard.writeText(notepadText);
+                                            toast.success('Notes copied!');
+                                        }}
+                                    >
+                                        <Copy size={14} /> Copy Notes
                                     </button>
                                 </div>
-                                <div className="vm-setting-row">
-                                    <span>Lock Meeting</span>
-                                    <button className={`vm-toggle ${meetingSettings.locked ? 'on' : ''}`}
-                                        onClick={() => hostAction('lock-meeting', { locked: !meetingSettings.locked })}>
-                                        {meetingSettings.locked ? <Lock size={14} /> : <Unlock size={14} />}
-                                    </button>
-                                </div>
-                                <div style={{ marginTop: 24, display: 'flex', flexDirection: 'column', gap: 8 }}>
-                                    <button className="btn btn-danger" onClick={() => { hostAction('end-meeting'); leaveMeeting(); }}>
-                                        <PhoneOff size={16} /> End Meeting for All
-                                    </button>
-                                </div>
-                            </div>
-                        )}
-                    </motion.div>
-                )}
-            </AnimatePresence>
-
-            {/* ── Controls Bar ── */}
-            <div className="vm-controls">
-                <div className="vm-controls-left">
-                    <div className="vm-meeting-info">
-                        <span className="vm-meeting-title">Meeting</span>
-                        <span className="vm-meeting-time">{formatTime(duration)}</span>
-                    </div>
-                </div>
-
-                <div className="vm-controls-center">
-                    <motion.button className={`vm-ctrl-btn ${!audioOn ? 'off' : ''}`} onClick={toggleAudio} title="Mute (M)" whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.9 }}>
-                        {audioOn ? <Mic size={20} /> : <MicOff size={20} />}
-                    </motion.button>
-                    <motion.button className={`vm-ctrl-btn ${!videoOn ? 'off' : ''}`} onClick={toggleVideo} title="Video (V)" whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.9 }}>
-                        {videoOn ? <Video size={20} /> : <VideoOff size={20} />}
-                    </motion.button>
-                    <motion.button className={`vm-ctrl-btn ${screenSharing ? 'active' : ''}`} onClick={toggleScreenShare} title="Share Screen" whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.9 }}>
-                        {screenSharing ? <ScreenShareOff size={20} /> : <MonitorUp size={20} />}
-                    </motion.button>
-                    <motion.button className={`vm-ctrl-btn ${bgBlur ? 'active' : ''}`} onClick={toggleBgBlur} title="Virtual Background" whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.9 }}>
-                        <Image size={20} />
-                    </motion.button>
-
-                    <div className="vm-ctrl-divider" />
-
-                    <motion.button className={`vm-ctrl-btn secondary ${handRaised ? 'active hand-active' : ''}`} onClick={toggleHand} title="Raise Hand (H)" whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.9 }}>
-                        <Hand size={20} />
-                    </motion.button>
-                    {isHost && (
-                        <motion.button className={`vm-ctrl-btn secondary ${isRecording ? 'recording' : ''}`} onClick={toggleRecording} title="Record" whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.9 }}>
-                            {isRecording ? <Square size={18} /> : <Circle size={18} />}
-                        </motion.button>
-                    )}
-
-                    <div className="vm-ctrl-divider" />
-
-                    <motion.button className={`vm-ctrl-btn secondary ${activePanel === 'chat' ? 'active' : ''}`} onClick={() => togglePanel('chat')} title="Chat (C)" whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.9 }}>
-                        <MessageSquare size={20} />{unreadChat > 0 && <span className="vm-badge">{unreadChat}</span>}
-                    </motion.button>
-                    <motion.button className={`vm-ctrl-btn secondary ${activePanel === 'participants' ? 'active' : ''}`} onClick={() => togglePanel('participants')} title="Participants (P)" whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.9 }}>
-                        <Users size={20} />
-                    </motion.button>
-                    <motion.button className={`vm-ctrl-btn secondary ${activePanel === 'whiteboard' ? 'active' : ''}`} onClick={() => togglePanel('whiteboard')} title="Whiteboard" whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.9 }}>
-                        <Pencil size={20} />
-                    </motion.button>
-                    <motion.button className={`vm-ctrl-btn secondary ${activePanel === 'polls' ? 'active' : ''}`} onClick={() => togglePanel('polls')} title="Polls" whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.9 }}>
-                        <BarChart3 size={20} />
-                    </motion.button>
-
-                    {/* More menu */}
-                    <div className="vm-more-menu">
-                        <button className="vm-ctrl-btn secondary" title="More"><ChevronDown size={20} /></button>
-                        <div className="vm-more-dropdown">
-                            <button onClick={() => togglePanel('notes')}><StickyNote size={14} /> Notes</button>
-                            <button onClick={() => togglePanel('shortcuts')}><Keyboard size={14} /> Shortcuts</button>
-                            {isHost && <button onClick={() => togglePanel('settings')}><Settings size={14} /> Settings</button>}
-                            <div className="vm-more-divider" />
-                            <div className="vm-reactions-row">
-                                {['👍', '❤️', '😂', '👏', '🎉', '🔥'].map(e => (
-                                    <button key={e} className="vm-reaction-btn" onClick={() => sendReaction(e)}>{e}</button>
-                                ))}
-                            </div>
+                            )}
                         </div>
                     </div>
+                )}
 
-                    <div className="vm-ctrl-divider" />
+                {/* ── Bottom Controls Bar ── */}
+                <div className="vm-controls">
+                    <div className="vm-ctrl-group">
+                        {/* Mic */}
+                        <button
+                            className={`vm-ctrl-btn ${!micOn ? 'off' : ''}`}
+                            onClick={toggleMic}
+                            title="Toggle Mic (M)"
+                        >
+                            {micOn ? <Mic size={20} /> : <MicOff size={20} />}
+                        </button>
 
-                    <motion.button className="vm-ctrl-btn leave" onClick={leaveMeeting} title="Leave" whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.9 }}>
-                        <PhoneOff size={20} />
-                    </motion.button>
-                </div>
+                        {/* Camera */}
+                        <button
+                            className={`vm-ctrl-btn ${!camOn ? 'off' : ''}`}
+                            onClick={toggleCam}
+                            title="Toggle Camera (V)"
+                        >
+                            {camOn ? <Video size={20} /> : <VideoOff size={20} />}
+                        </button>
 
-                <div className="vm-controls-right">
-                    <button className="vm-copy-link-btn" onClick={copyLink}>
-                        <LinkIcon size={14} />{copied ? 'Copied!' : 'Invite'}
-                    </button>
+                        {/* Screen Share */}
+                        <button
+                            className={`vm-ctrl-btn ${screenStream ? 'active' : ''}`}
+                            onClick={toggleScreenShare}
+                            title="Screen Share"
+                        >
+                            {screenStream ? <MonitorOff size={20} /> : <Monitor size={20} />}
+                        </button>
+
+                        <div className="vm-ctrl-divider" />
+
+                        {/* Captions */}
+                        <button
+                            className={`vm-ctrl-btn ${captionsOn ? 'active' : ''}`}
+                            onClick={toggleCaptions}
+                            title="Captions (C)"
+                        >
+                            {captionsOn ? <Captions size={20} /> : <CaptionsOff size={20} />}
+                        </button>
+
+                        {/* Recording */}
+                        <button
+                            className={`vm-ctrl-btn ${isRecording ? 'recording' : ''}`}
+                            onClick={toggleRecording}
+                            title="Record (R)"
+                        >
+                            {isRecording ? <Square size={18} fill="currentColor" /> : <Circle size={20} />}
+                        </button>
+
+                        {/* Hand Raise */}
+                        <button
+                            className={`vm-ctrl-btn ${handRaised ? 'active' : ''}`}
+                            onClick={toggleHandRaise}
+                            title="Raise Hand (H)"
+                        >
+                            <Hand size={20} />
+                        </button>
+
+                        <div className="vm-ctrl-divider" />
+
+                        {/* Chat */}
+                        <button
+                            className={`vm-ctrl-btn ${activePanel === 'chat' ? 'active' : ''}`}
+                            onClick={() => togglePanel('chat')}
+                            title="Chat"
+                            style={{ position: 'relative' }}
+                        >
+                            <MessageSquare size={20} />
+                            {unreadChats > 0 && <span className="vm-badge">{unreadChats}</span>}
+                        </button>
+
+                        {/* Participants */}
+                        <button
+                            className={`vm-ctrl-btn ${activePanel === 'participants' ? 'active' : ''}`}
+                            onClick={() => togglePanel('participants')}
+                            title="Participants"
+                        >
+                            <Users size={20} />
+                        </button>
+
+                        {/* Whiteboard */}
+                        <button
+                            className={`vm-ctrl-btn ${activePanel === 'whiteboard' ? 'active' : ''}`}
+                            onClick={() => togglePanel('whiteboard')}
+                            title="Whiteboard"
+                        >
+                            <Pencil size={20} />
+                        </button>
+
+                        {/* Polls */}
+                        <button
+                            className={`vm-ctrl-btn ${activePanel === 'polls' ? 'active' : ''}`}
+                            onClick={() => togglePanel('polls')}
+                            title="Polls"
+                        >
+                            <BarChart3 size={20} />
+                        </button>
+
+                        {/* Q&A */}
+                        <button
+                            className={`vm-ctrl-btn ${activePanel === 'qa' ? 'active' : ''}`}
+                            onClick={() => togglePanel('qa')}
+                            title="Q&A"
+                            style={{ position: 'relative' }}
+                        >
+                            <HelpCircle size={20} />
+                            {questions.length > 0 && <span className="vm-badge">{questions.length}</span>}
+                        </button>
+
+                        {/* Notepad */}
+                        <button
+                            className={`vm-ctrl-btn ${activePanel === 'notepad' ? 'active' : ''}`}
+                            onClick={() => togglePanel('notepad')}
+                            title="Notepad"
+                        >
+                            <FileText size={20} />
+                        </button>
+
+                        {/* More */}
+                        <div style={{ position: 'relative' }}>
+                            <button
+                                className={`vm-ctrl-btn ${showMoreMenu ? 'active' : ''}`}
+                                onClick={() => setShowMoreMenu(!showMoreMenu)}
+                                title="More"
+                            >
+                                <MoreVertical size={20} />
+                            </button>
+                            {showMoreMenu && (
+                                <div className="vm-more-menu">
+                                    {/* Save Transcript & Analyze */}
+                                    <button
+                                        className="vm-more-item vm-save-transcript"
+                                        onClick={() => { saveTranscriptAndAnalyze(); setShowMoreMenu(false); }}
+                                        disabled={savingTranscript}
+                                        title={transcriptRef.current.length === 0 ? 'Enable captions first to capture a transcript' : `${transcriptRef.current.length} transcript entries ready`}
+                                    >
+                                        <Download size={16} />
+                                        {savingTranscript ? 'Saving...' : `Save Transcript & Analyze (${transcriptRef.current.length})`}
+                                    </button>
+                                    <div className="vm-more-divider" />
+                                    <button className="vm-more-item" onClick={() => { setLayout(l => l === 'grid' ? 'speaker' : 'grid'); setShowMoreMenu(false); }}>
+                                        <Settings2 size={16} /> {layout === 'grid' ? 'Speaker View' : 'Grid View'}
+                                    </button>
+                                    <button className="vm-more-item" onClick={() => { toggleFullscreen(); setShowMoreMenu(false); }}>
+                                        {isFullscreen ? <Minimize size={16} /> : <Maximize size={16} />}
+                                        {isFullscreen ? 'Exit Fullscreen' : 'Fullscreen'}
+                                    </button>
+                                    <div className="vm-more-divider" />
+                                    <div className="vm-reactions-row">
+                                        {['👍', '👏', '❤️', '😂', '😮', '🎉'].map(emoji => (
+                                            <button key={emoji} className="vm-reaction-btn" onClick={() => { sendReaction(emoji); setShowMoreMenu(false); }}>
+                                                {emoji}
+                                            </button>
+                                        ))}
+                                    </div>
+                                    <div className="vm-more-divider" />
+                                    <div className="vm-shortcut-hints">
+                                        <span><kbd>M</kbd> Mic</span>
+                                        <span><kbd>V</kbd> Camera</span>
+                                        <span><kbd>H</kbd> Hand</span>
+                                        <span><kbd>C</kbd> Captions</span>
+                                        <span><kbd>R</kbd> Record</span>
+                                        <span><kbd>Esc</kbd> Close Panel</span>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+
+                        <div className="vm-ctrl-divider" />
+
+                        {/* Leave */}
+                        <button className="vm-ctrl-btn leave" onClick={handleLeave} title="Leave Meeting">
+                            <PhoneOff size={20} />
+                        </button>
+                    </div>
                 </div>
             </div>
         </div>
     );
 }
 
-// Remote Video Component
-function RemoteVideo({ stream }) {
-    const ref = useRef(null);
-    useEffect(() => { if (ref.current && stream) ref.current.srcObject = stream; }, [stream]);
-    return <video ref={ref} autoPlay playsInline className="vm-video" />;
-}
+/* ── Video Player for Remote Streams ── */
+const VideoPlayer = ({ stream }) => {
+    const videoRef = useRef(null);
+    useEffect(() => {
+        if (videoRef.current && stream) videoRef.current.srcObject = stream;
+    }, [stream]);
+    return <video ref={videoRef} autoPlay playsInline />;
+};

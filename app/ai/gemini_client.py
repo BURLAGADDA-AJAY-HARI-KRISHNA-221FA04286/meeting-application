@@ -1,30 +1,23 @@
 """
 Gemini Client — Reusable LLM interface with JSON extraction and retry.
+Uses the new google-genai SDK.
 """
 import json
 import re
 import logging
-import time
+import asyncio
 from typing import Any
 
-import google.generativeai as genai
+from google import genai
 
 from app.core.config import settings
 
 logger = logging.getLogger("meetingai.gemini")
 
-if settings.gemini_api_key:
-    genai.configure(api_key=settings.gemini_api_key)
-
 
 class GeminiClient:
     def __init__(self):
-        self.model = genai.GenerativeModel(
-            settings.gemini_model,
-            generation_config=genai.types.GenerationConfig(
-                temperature=settings.gemini_temperature,
-            ),
-        )
+        self.client = genai.Client(api_key=settings.gemini_api_key) if settings.gemini_api_key else None
 
     @staticmethod
     def _extract_json(text: str) -> dict[str, Any] | None:
@@ -68,8 +61,8 @@ class GeminiClient:
         fallback: dict[str, Any],
         retries: int | None = None,
     ) -> dict[str, Any]:
-        """Run a prompt expecting JSON output with retry logic."""
-        if not settings.gemini_api_key:
+        """Run a prompt expecting JSON output with retry logic (sync)."""
+        if not self.client:
             logger.warning("Gemini API key not configured")
             return fallback
 
@@ -81,9 +74,13 @@ class GeminiClient:
             f"Input:\n{transcript}"
         )
 
+        import time
         for attempt in range(max_retries + 1):
             try:
-                response = self.model.generate_content(prompt)
+                response = self.client.models.generate_content(
+                    model=settings.gemini_model,
+                    contents=prompt
+                )
                 text = (response.text or "").strip()
             except Exception as e:
                 logger.error("Gemini API error (attempt %d): %s", attempt + 1, e)

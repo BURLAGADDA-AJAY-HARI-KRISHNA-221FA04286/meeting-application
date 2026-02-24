@@ -13,7 +13,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -22,6 +22,7 @@ from app.api.v1.router import api_router
 from app.core.config import settings
 from app.db.base import Base
 from app.db.session import engine
+from app.core.rate_limit import limiter
 
 # ── Logging Setup ──────────────────────────────────────────
 logging.basicConfig(
@@ -31,8 +32,6 @@ logging.basicConfig(
     stream=sys.stdout,
 )
 logger = logging.getLogger("meetingai")
-
-limiter = Limiter(key_func=get_remote_address)
 
 
 # ── Request ID Middleware ──────────────────────────────────
@@ -128,6 +127,27 @@ def create_app() -> FastAPI:
     # Request tracing
     app.add_middleware(RequestIdMiddleware)
 
+    # ── Security Headers ──────────────────────────────────
+    from fastapi.middleware.trustedhost import TrustedHostMiddleware
+    # In production, restrict this! for now, allow all for dev
+    app.add_middleware(TrustedHostMiddleware, allowed_hosts=["*"])
+    
+    # Custom Security Headers
+    @app.middleware("http")
+    async def add_security_headers(request: Request, call_next):
+        response = await call_next(request)
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["X-XSS-Protection"] = "1; mode=block"
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        # In dev mode, allow inline styles/scripts and ws connections for React dev server
+        if settings.env != "production":
+            response.headers["Content-Security-Policy"] = "default-src * 'unsafe-inline' 'unsafe-eval' data: blob: ws: wss:;"
+        else:
+            response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+            response.headers["Content-Security-Policy"] = "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'self' ws: wss:; object-src 'none';"
+        return response
+
     # ── Global Exception Handlers ─────────────────────────
     @app.exception_handler(ValueError)
     async def value_error_handler(request: Request, exc: ValueError):
@@ -136,9 +156,15 @@ def create_app() -> FastAPI:
     @app.exception_handler(Exception)
     async def general_exception_handler(request: Request, exc: Exception):
         logger.error("Unhandled exception: %s", exc, exc_info=True)
+        # In production, do not leak internal error details
+        if settings.env == "production":
+            return JSONResponse(
+                status_code=500,
+                content={"detail": "Internal server error. Please contact support."},
+            )
         return JSONResponse(
             status_code=500,
-            content={"detail": "Internal server error. Please try again later."},
+            content={"detail": str(exc)},
         )
 
     # ── Routes ────────────────────────────────────────────

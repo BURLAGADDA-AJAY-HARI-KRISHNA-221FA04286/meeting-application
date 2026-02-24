@@ -34,3 +34,11 @@ def decode_token(token: str) -> dict:
         return jwt.decode(token, settings.secret_key, algorithms=[settings.algorithm])
     except JWTError as exc:
         raise ValueError("Invalid token") from exc
+
+
+def sanitize_input(text: str) -> str:
+    """Sanitize input text to prevent XSS."""
+    if not text:
+        return text
+    import bleach
+    return bleach.clean(text, tags=[], strip=True)

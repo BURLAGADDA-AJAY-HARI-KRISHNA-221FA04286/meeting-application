@@ -1,8 +1,11 @@
 """
-Meetings API — CRUD, Dashboard, Transcript, and Statistics
+Meetings API — CRUD, Dashboard, Transcript, Statistics, and Media Upload
 """
 import logging
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+import os
+import tempfile
+import asyncio
+from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File, Form, status
 from sqlalchemy import func, select, desc
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -77,6 +80,8 @@ async def _enrich_meeting(db: AsyncSession, meeting: Meeting, include_analysis: 
     return data
 
 
+from app.core.security import sanitize_input
+
 # ── Create Meeting ────────────────────────────────────────
 @router.post("", response_model=MeetingOut, status_code=status.HTTP_201_CREATED)
 async def create_meeting(
@@ -86,7 +91,7 @@ async def create_meeting(
 ):
     meeting = Meeting(
         user_id=current_user.id,
-        title=payload.title,
+        title=sanitize_input(payload.title),
         consent_given=payload.consent_given,
     )
     db.add(meeting)
@@ -311,6 +316,8 @@ async def update_meeting(
 
     updates = payload.model_dump(exclude_none=True)
     for key, value in updates.items():
+        if key == "title" and value:
+            value = sanitize_input(value)
         setattr(meeting, key, value)
         
     await db.commit()
@@ -336,3 +343,167 @@ async def delete_meeting(
     logger.info("Deleting meeting %d for user %d", meeting_id, current_user.id)
     await db.delete(meeting)
     await db.commit()
+
+
+# ── Upload Video/Audio → Transcript ──────────────────────
+ALLOWED_MEDIA_TYPES = {
+    "video/mp4", "video/webm", "video/x-matroska", "video/quicktime",
+    "audio/mpeg", "audio/mp3", "audio/wav", "audio/x-wav", "audio/webm",
+    "audio/ogg", "audio/mp4", "audio/x-m4a", "audio/m4a",
+}
+MAX_FILE_SIZE = 100 * 1024 * 1024  # 100 MB
+
+
+def _transcribe_with_gemini(file_path: str, mime_type: str) -> str:
+    """Use Gemini to transcribe audio/video file (sync, runs in thread)."""
+    from google import genai
+    from app.core.config import settings
+
+    if not settings.gemini_api_key:
+        raise ValueError("Gemini API key not configured")
+
+    client = genai.Client(api_key=settings.gemini_api_key)
+
+    logger.info("Uploading media file to Gemini for transcription...")
+    
+    # Upload file
+    uploaded = client.files.upload(file=file_path, config={'mime_type': mime_type})
+    logger.info("File uploaded: %s", uploaded.name)
+
+    prompt = (
+        "Transcribe the following audio/video file into a text transcript. "
+        "Format each line as 'Speaker: text'. If you cannot identify distinct speakers, "
+        "use 'Speaker 1', 'Speaker 2', etc. If only one speaker, use 'Speaker'. "
+        "Include all spoken content. Do NOT add commentary or analysis — only the transcript. "
+        "If the audio is unclear, do your best to transcribe what you hear."
+    )
+
+    response = client.models.generate_content(
+        model=settings.gemini_model,
+        contents=[uploaded, prompt]
+    )
+    transcript = (response.text or "").strip()
+
+    # Clean up uploaded file
+    try:
+        client.files.delete(name=uploaded.name)
+    except Exception:
+        pass
+
+    return transcript
+
+
+@router.post("/upload-media", response_model=MeetingOut, status_code=status.HTTP_201_CREATED)
+async def upload_media(
+    file: UploadFile = File(...),
+    title: str = Form(default=""),
+    auto_analyze: bool = Form(default=True),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Upload a video or audio file → Gemini transcribes it → creates a meeting.
+    Supports: mp4, webm, mp3, wav, m4a, ogg (up to 100 MB).
+    """
+    # Validate file type
+    content_type = file.content_type or ""
+    if content_type not in ALLOWED_MEDIA_TYPES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unsupported file type: {content_type}. Allowed: mp4, webm, mp3, wav, m4a, ogg"
+        )
+
+    # Read file with size check
+    contents = await file.read()
+    if len(contents) > MAX_FILE_SIZE:
+        raise HTTPException(status_code=400, detail="File too large. Max 100 MB.")
+
+    if len(contents) < 1000:
+        raise HTTPException(status_code=400, detail="File too small or empty.")
+
+    # Write to temp file for Gemini upload
+    ext = os.path.splitext(file.filename or "upload.mp4")[1] or ".mp4"
+    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=ext)
+    try:
+        tmp.write(contents)
+        tmp.flush()
+        tmp.close()
+
+        # Transcribe in a thread (Gemini SDK is sync)
+        transcript = await asyncio.to_thread(
+            _transcribe_with_gemini, tmp.name, content_type
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error("Media transcription failed: %s", e, exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Transcription failed: {e}")
+    finally:
+        try:
+            os.unlink(tmp.name)
+        except Exception:
+            pass
+
+    if not transcript or len(transcript) < 10:
+        raise HTTPException(status_code=400, detail="Could not extract any transcript from this file.")
+
+    # Create meeting with transcript
+    meeting_title = sanitize_input(title.strip()) if title.strip() else f"Media Upload ({file.filename})"
+    meeting = Meeting(
+        user_id=current_user.id,
+        title=meeting_title,
+        consent_given=True,
+    )
+    db.add(meeting)
+    await db.commit()
+    await db.refresh(meeting)
+
+    # Save transcript lines as subtitles
+    lines = transcript.split("\n")
+    current_time = 0.0
+    saved_count = 0
+    for line in lines:
+        line = line.strip()
+        if not line:
+            continue
+        parts = line.split(":", 1)
+        if len(parts) == 2:
+            speaker = parts[0].strip()
+            text = parts[1].strip()
+        else:
+            speaker = "Speaker"
+            text = line
+        if not text:
+            continue
+
+        duration = max(2.0, len(text) / 15.0)
+        sub = Subtitle(
+            meeting_id=meeting.id,
+            speaker_id=speaker,
+            speaker_name=speaker,
+            text=text,
+            start_time=current_time,
+            end_time=current_time + duration,
+            confidence=0.85,
+        )
+        db.add(sub)
+        current_time += duration
+        saved_count += 1
+
+    await db.commit()
+    logger.info(
+        "Created meeting %d from media upload (%s), %d subtitle lines",
+        meeting.id, file.filename, saved_count
+    )
+
+    # Auto-analyze if requested
+    if auto_analyze:
+        try:
+            from app.ai.orchestrator import AIAgentOrchestrator
+            orchestrator = AIAgentOrchestrator(db, meeting.id)
+            await orchestrator.run_pipeline()
+            logger.info("Auto-analysis complete for meeting %d", meeting.id)
+        except Exception as e:
+            logger.error("Auto-analysis failed for meeting %d: %s", meeting.id, e)
+
+    return await _enrich_meeting(db, meeting, include_analysis=True)
