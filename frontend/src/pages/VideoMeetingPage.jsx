@@ -88,6 +88,10 @@ export default function VideoMeetingPage() {
     // ── Notepad Panel ──
     const [notepadText, setNotepadText] = useState('Meeting Notes\n---\n');
 
+    // ── Admin Chat Controls ──
+    const [communityChatEnabled, setCommunityChatEnabled] = useState(true);
+    const [privateChatEnabled, setPrivateChatEnabled] = useState(true);
+
     // ── Transcript (accumulated from captions for saving/analysis) ──
     const [savingTranscript, setSavingTranscript] = useState(false);
     const transcriptRef = useRef([]); // { speaker, text, start_time, end_time, confidence }
@@ -330,6 +334,15 @@ export default function VideoMeetingPage() {
                             timestamp: new Date().toISOString()
                         }]);
                         toast('📝 Notes shared with everyone!');
+                        break;
+                    case 'admin-setting':
+                        if (data.setting === 'community-chat') {
+                            setCommunityChatEnabled(data.enabled);
+                            toast(data.enabled ? '💬 Community chat enabled' : '🔒 Community chat disabled');
+                        } else if (data.setting === 'private-chat') {
+                            setPrivateChatEnabled(data.enabled);
+                            toast(data.enabled ? '💬 Private chat enabled' : '🔒 Private chat disabled');
+                        }
                         break;
                     default:
                         break;
@@ -643,12 +656,27 @@ export default function VideoMeetingPage() {
                 };
 
                 recognition.onerror = (e) => {
-                    if (e.error !== 'no-speech') console.error('Speech recognition error:', e.error);
+                    if (e.error === 'no-speech') return; // Normal — just silence
+                    if (e.error === 'aborted') return; // User toggled off
+                    console.warn('Speech recognition error:', e.error);
+                    // On network or other transient errors, try restarting after delay
+                    if (captionsOnRef.current && recognitionRef.current) {
+                        setTimeout(() => {
+                            if (captionsOnRef.current && recognitionRef.current) {
+                                try { recognitionRef.current.start(); } catch { /* already running */ }
+                            }
+                        }, 1000);
+                    }
                 };
                 recognition.onend = () => {
                     // Auto-restart using ref (avoids stale closure)
                     if (captionsOnRef.current && recognitionRef.current) {
-                        try { recognitionRef.current.start(); } catch (e) { /* already running */ }
+                        // Small delay to avoid rapid-fire restart issues
+                        setTimeout(() => {
+                            if (captionsOnRef.current && recognitionRef.current) {
+                                try { recognitionRef.current.start(); } catch { /* already running */ }
+                            }
+                        }, 300);
                     }
                 };
 
@@ -1031,6 +1059,29 @@ export default function VideoMeetingPage() {
                                     isCompact={false}
                                     showTimestamps={true}
                                     onSendMessage={sendChatMessage}
+                                    participants={participants}
+                                    currentUser={user}
+                                    isAdmin={true}
+                                    chatEnabled={communityChatEnabled}
+                                    privateChatEnabled={privateChatEnabled}
+                                    onToggleCommunityChat={() => {
+                                        setCommunityChatEnabled(prev => !prev);
+                                        wsRef.current?.send(JSON.stringify({
+                                            type: 'admin-setting',
+                                            setting: 'community-chat',
+                                            enabled: !communityChatEnabled,
+                                        }));
+                                        toast.success(communityChatEnabled ? 'Community chat disabled' : 'Community chat enabled');
+                                    }}
+                                    onTogglePrivateChat={() => {
+                                        setPrivateChatEnabled(prev => !prev);
+                                        wsRef.current?.send(JSON.stringify({
+                                            type: 'admin-setting',
+                                            setting: 'private-chat',
+                                            enabled: !privateChatEnabled,
+                                        }));
+                                        toast.success(privateChatEnabled ? 'Private chat disabled' : 'Private chat enabled');
+                                    }}
                                 />
                             )}
 
@@ -1087,15 +1138,16 @@ export default function VideoMeetingPage() {
                                         onClick={() => {
                                             const canvas = document.querySelector('canvas');
                                             if (canvas) {
-                                                canvas.toBlob((blob) => {
-                                                    const url = URL.createObjectURL(blob);
-                                                    const a = document.createElement('a');
-                                                    a.href = url;
-                                                    a.download = `whiteboard-${new Date().toISOString().slice(0, 10)}.png`;
-                                                    a.click();
-                                                    URL.revokeObjectURL(url);
-                                                    toast.success('Whiteboard saved!');
-                                                });
+                                                // Use data URL approach instead of blob to avoid
+                                                // Windows SmartScreen blocking the download
+                                                const dataUrl = canvas.toDataURL('image/png');
+                                                const a = document.createElement('a');
+                                                a.href = dataUrl;
+                                                a.download = `whiteboard-${new Date().toISOString().slice(0, 10)}.png`;
+                                                document.body.appendChild(a);
+                                                a.click();
+                                                setTimeout(() => document.body.removeChild(a), 100);
+                                                toast.success('Whiteboard saved!');
                                             } else {
                                                 toast.error('No whiteboard to save');
                                             }

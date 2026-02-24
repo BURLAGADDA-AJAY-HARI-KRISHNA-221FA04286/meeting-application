@@ -372,7 +372,7 @@ export default function MeetingDetailPage() {
                         </div>
                         <motion.button
                             className="btn btn-primary btn-lg"
-                            onClick={handleAnalyze}
+                            onClick={() => handleAnalyze(false)}
                             disabled={analyzing}
                             whileHover={{ scale: 1.03 }}
                             style={{ marginTop: 16 }}

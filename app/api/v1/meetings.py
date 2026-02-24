@@ -142,6 +142,7 @@ async def create_meeting(
 @router.get("", response_model=list[MeetingListOut])
 async def list_meetings(
     search: str | None = Query(default=None, max_length=255),
+    status: str | None = Query(default=None, max_length=20),
     skip: int = Query(default=0, ge=0),
     limit: int = Query(default=50, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
@@ -183,6 +184,15 @@ async def list_meetings(
     )
     if search:
         stmt = stmt.where(Meeting.title.ilike(f"%{search}%"))
+    # Filter by analysis status using EXISTS subquery
+    if status == "analyzed":
+        stmt = stmt.where(
+            select(AIResult.id).where(AIResult.meeting_id == Meeting.id).exists()
+        )
+    elif status == "pending":
+        stmt = stmt.where(
+            ~select(AIResult.id).where(AIResult.meeting_id == Meeting.id).exists()
+        )
 
     stmt = stmt.order_by(desc(Meeting.created_at)).offset(skip).limit(limit)
     result = await db.execute(stmt)

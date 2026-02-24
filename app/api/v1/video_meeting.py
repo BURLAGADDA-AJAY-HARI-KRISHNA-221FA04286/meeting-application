@@ -404,6 +404,34 @@ async def video_meeting_websocket(
                             break
                     logger.info(f"User {display_name} kicked user {target_user_id} from room {code}")
 
+            elif msg_type == "private-chat":
+                # Route message to a specific participant only
+                target_user_id = data.get("target_user_id")
+                if target_user_id is not None:
+                    for prt in room.get("participants", []):
+                        if str(prt.get("user_id")) == str(target_user_id):
+                            target_ws = prt.get("ws")
+                            if target_ws:
+                                try:
+                                    await target_ws.send_json({
+                                        "type": "private-chat",
+                                        "sender_id": user_id,
+                                        "sender_name": display_name,
+                                        "text": data.get("text", ""),
+                                    })
+                                except Exception:
+                                    pass
+                            break
+
+            elif msg_type == "admin-setting":
+                # Broadcast admin setting change to all participants
+                await broadcast(code, {
+                    "type": "admin-setting",
+                    "setting": data.get("setting"),
+                    "enabled": data.get("enabled"),
+                    "admin_name": display_name,
+                }, exclude=websocket)
+
     except WebSocketDisconnect:
         try:
             if participant in room["participants"]:
