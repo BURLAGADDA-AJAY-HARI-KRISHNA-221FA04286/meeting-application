@@ -7,9 +7,11 @@ import {
     Copy, MessageSquare, Users, Hand, MoreVertical, Maximize, Minimize,
     Circle, Square, Pencil, BarChart3, Captions, CaptionsOff,
     Download, Timer, X, ChevronUp, ChevronDown, Settings2,
-    Hash, Lock, FileText, HelpCircle, Send, Share2
+    Hash, Lock, FileText, HelpCircle, Send, Share2,
+    VolumeX, Volume2, LockKeyhole, Unlock
 } from 'lucide-react';
 import toast from 'react-hot-toast';
+import { downloadTextFile, downloadBlobFile, downloadCanvas } from '../utils/download';
 import Chat from '../components/Chat';
 import Whiteboard from '../components/Whiteboard';
 import './VideoMeeting.css';
@@ -91,6 +93,8 @@ export default function VideoMeetingPage() {
     // ── Admin Chat Controls ──
     const [communityChatEnabled, setCommunityChatEnabled] = useState(true);
     const [privateChatEnabled, setPrivateChatEnabled] = useState(true);
+    const [meetingLocked, setMeetingLocked] = useState(false);
+    const [participantScreenShareEnabled, setParticipantScreenShareEnabled] = useState(true);
 
     // ── Transcript (accumulated from captions for saving/analysis) ──
     const [savingTranscript, setSavingTranscript] = useState(false);
@@ -342,6 +346,27 @@ export default function VideoMeetingPage() {
                         } else if (data.setting === 'private-chat') {
                             setPrivateChatEnabled(data.enabled);
                             toast(data.enabled ? '💬 Private chat enabled' : '🔒 Private chat disabled');
+                        } else if (data.setting === 'mute-all') {
+                            // Force mute local mic
+                            if (localStreamRef.current) {
+                                localStreamRef.current.getAudioTracks().forEach(t => { t.enabled = false; });
+                            }
+                            setMicOn(false);
+                            toast('🔇 Host muted all participants', { icon: '🔇' });
+                        } else if (data.setting === 'mute-participant') {
+                            if (String(data.target_user_id) === String(user?.id)) {
+                                if (localStreamRef.current) {
+                                    localStreamRef.current.getAudioTracks().forEach(t => { t.enabled = false; });
+                                }
+                                setMicOn(false);
+                                toast('🔇 Host muted your microphone', { icon: '🔇' });
+                            }
+                        } else if (data.setting === 'screen-share') {
+                            setParticipantScreenShareEnabled(data.enabled);
+                            toast(data.enabled ? '🖥️ Screen sharing enabled' : '🔒 Screen sharing disabled by host');
+                        } else if (data.setting === 'meeting-locked') {
+                            setMeetingLocked(data.enabled);
+                            toast(data.enabled ? '🔒 Meeting has been locked' : '🔓 Meeting has been unlocked');
                         }
                         break;
                     default:
@@ -738,12 +763,7 @@ export default function VideoMeetingPage() {
             recorder.onstop = () => {
                 if (recordedChunksRef.current.length > 0) {
                     const blob = new Blob(recordedChunksRef.current, { type: selectedMimeType });
-                    const url = URL.createObjectURL(blob);
-                    const a = document.createElement('a');
-                    a.href = url;
-                    a.download = `meeting-recording-${new Date().toISOString().slice(0, 19).replace(/:/g, '-')}.webm`;
-                    a.click();
-                    URL.revokeObjectURL(url);
+                    downloadBlobFile(blob, `meeting-recording-${new Date().toISOString().slice(0, 19).replace(/:/g, '-')}.webm`);
                     toast.success('Recording saved!');
                 }
             };
@@ -1110,6 +1130,21 @@ export default function VideoMeetingPage() {
                                                 {raisedHands.has(p.name) && <span>✋</span>}
                                                 <button
                                                     className="vm-kick-btn"
+                                                    title={`Mute ${p.name}`}
+                                                    onClick={() => {
+                                                        wsRef.current?.send(JSON.stringify({
+                                                            type: 'admin-setting',
+                                                            setting: 'mute-participant',
+                                                            target_user_id: p.id,
+                                                            target_name: p.name,
+                                                        }));
+                                                        toast.success(`Mute request sent to ${p.name}`);
+                                                    }}
+                                                >
+                                                    <VolumeX size={12} />
+                                                </button>
+                                                <button
+                                                    className="vm-kick-btn"
                                                     title={`Remove ${p.name}`}
                                                     onClick={() => {
                                                         if (confirm(`Remove ${p.name} from the meeting?`)) {
@@ -1125,6 +1160,90 @@ export default function VideoMeetingPage() {
                                             </div>
                                         </div>
                                     ))}
+
+                                    {/* ── Host Controls Section ── */}
+                                    <div className="vm-admin-controls">
+                                        <div className="vm-admin-title">🛡️ Host Controls</div>
+
+                                        <button
+                                            className={`vm-admin-toggle ${meetingLocked ? 'active-danger' : ''}`}
+                                            onClick={() => {
+                                                setMeetingLocked(prev => !prev);
+                                                wsRef.current?.send(JSON.stringify({
+                                                    type: 'admin-setting',
+                                                    setting: 'meeting-locked',
+                                                    enabled: !meetingLocked,
+                                                }));
+                                                toast.success(meetingLocked ? 'Meeting unlocked' : 'Meeting locked');
+                                            }}
+                                        >
+                                            {meetingLocked ? <LockKeyhole size={14} /> : <Unlock size={14} />}
+                                            <span>{meetingLocked ? 'Meeting Locked' : 'Lock Meeting'}</span>
+                                        </button>
+
+                                        <button
+                                            className="vm-admin-toggle"
+                                            onClick={() => {
+                                                wsRef.current?.send(JSON.stringify({
+                                                    type: 'admin-setting',
+                                                    setting: 'mute-all',
+                                                    enabled: true,
+                                                }));
+                                                toast.success('Mute request sent to all participants');
+                                            }}
+                                        >
+                                            <VolumeX size={14} />
+                                            <span>Mute All</span>
+                                        </button>
+
+                                        <button
+                                            className={`vm-admin-toggle ${!participantScreenShareEnabled ? 'active-danger' : ''}`}
+                                            onClick={() => {
+                                                setParticipantScreenShareEnabled(prev => !prev);
+                                                wsRef.current?.send(JSON.stringify({
+                                                    type: 'admin-setting',
+                                                    setting: 'screen-share',
+                                                    enabled: !participantScreenShareEnabled,
+                                                }));
+                                                toast.success(participantScreenShareEnabled ? 'Screen sharing disabled for participants' : 'Screen sharing enabled for participants');
+                                            }}
+                                        >
+                                            {participantScreenShareEnabled ? <Monitor size={14} /> : <MonitorOff size={14} />}
+                                            <span>{participantScreenShareEnabled ? 'Disable Screen Share' : 'Enable Screen Share'}</span>
+                                        </button>
+
+                                        <button
+                                            className={`vm-admin-toggle ${!communityChatEnabled ? 'active-danger' : ''}`}
+                                            onClick={() => {
+                                                setCommunityChatEnabled(prev => !prev);
+                                                wsRef.current?.send(JSON.stringify({
+                                                    type: 'admin-setting',
+                                                    setting: 'community-chat',
+                                                    enabled: !communityChatEnabled,
+                                                }));
+                                                toast.success(communityChatEnabled ? 'Community chat disabled' : 'Community chat enabled');
+                                            }}
+                                        >
+                                            {communityChatEnabled ? <MessageSquare size={14} /> : <Lock size={14} />}
+                                            <span>{communityChatEnabled ? 'Disable Community Chat' : 'Enable Community Chat'}</span>
+                                        </button>
+
+                                        <button
+                                            className={`vm-admin-toggle ${!privateChatEnabled ? 'active-danger' : ''}`}
+                                            onClick={() => {
+                                                setPrivateChatEnabled(prev => !prev);
+                                                wsRef.current?.send(JSON.stringify({
+                                                    type: 'admin-setting',
+                                                    setting: 'private-chat',
+                                                    enabled: !privateChatEnabled,
+                                                }));
+                                                toast.success(privateChatEnabled ? 'Private chat disabled' : 'Private chat enabled');
+                                            }}
+                                        >
+                                            {privateChatEnabled ? <Users size={14} /> : <Lock size={14} />}
+                                            <span>{privateChatEnabled ? 'Disable Private Chat' : 'Enable Private Chat'}</span>
+                                        </button>
+                                    </div>
                                 </div>
                             )}
 
@@ -1343,13 +1462,11 @@ export default function VideoMeetingPage() {
                                         <button
                                             className="vm-notepad-copy"
                                             onClick={() => {
-                                                const blob = new Blob([notepadText], { type: 'text/plain' });
-                                                const url = URL.createObjectURL(blob);
-                                                const a = document.createElement('a');
-                                                a.href = url;
-                                                a.download = `meeting-notes-${new Date().toISOString().slice(0, 10)}.txt`;
-                                                a.click();
-                                                URL.revokeObjectURL(url);
+                                                downloadTextFile(
+                                                    notepadText,
+                                                    `meeting-notes-${new Date().toISOString().slice(0, 10)}.txt`,
+                                                    'text/plain'
+                                                );
                                                 toast.success('Notes downloaded!');
                                             }}
                                         >

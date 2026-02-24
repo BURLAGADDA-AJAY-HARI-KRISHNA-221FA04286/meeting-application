@@ -7,9 +7,10 @@ import {
     Send, Sparkles, TriangleAlert, Target, MessageSquare,
     BarChart3, ChevronDown, ChevronUp, User, Bot, Clock,
     FileText, Github, Calendar, Copy, Check, BookOpen,
-    Lightbulb, AlertCircle
+    Lightbulb, AlertCircle, FileDown
 } from 'lucide-react';
 import toast from 'react-hot-toast';
+import { downloadTextFile, generateMeetingReport } from '../utils/download';
 import './MeetingDetail.css';
 
 const fadeUp = {
@@ -125,13 +126,15 @@ export default function MeetingDetailPage() {
             'END:VEVENT', 'END:VCALENDAR'
         ].join('\r\n');
 
-        const blob = new Blob([icsContent], { type: 'text/calendar' });
-        const link = document.createElement('a');
-        link.href = URL.createObjectURL(blob);
-        link.download = `${title.replace(/\s+/g, '_')}.ics`;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
+        downloadTextFile(icsContent, `${title.replace(/\s+/g, '_')}.ics`, 'text/calendar');
+        toast.success('Calendar file downloaded!');
+    };
+
+    const handleDownloadReport = () => {
+        const report = generateMeetingReport(meeting, analysis);
+        const filename = `${(meeting.title || 'meeting').replace(/\s+/g, '_')}_report_${new Date().toISOString().slice(0, 10)}.txt`;
+        downloadTextFile(report, filename, 'text/plain');
+        toast.success('Meeting report downloaded!');
     };
 
     const handleAddToCalendar = () => {
@@ -303,6 +306,9 @@ export default function MeetingDetailPage() {
                         <>
                             <button className="btn btn-secondary" onClick={() => handleAnalyze(true)} disabled={analyzing} title="Re-analyze">
                                 <RefreshCw size={14} className={analyzing ? 'spin' : ''} /> Re-analyze
+                            </button>
+                            <button className="btn btn-primary" onClick={handleDownloadReport} title="Download full analysis as text report">
+                                <FileDown size={14} /> Download Report
                             </button>
                             <button className="btn btn-secondary" onClick={handleGenerateTasks} title="Generate tasks from action items → Tasks page">
                                 <SquareCheck size={14} /> Generate Tasks
