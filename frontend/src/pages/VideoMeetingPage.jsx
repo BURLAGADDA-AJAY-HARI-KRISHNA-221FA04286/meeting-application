@@ -7,7 +7,7 @@ import {
     Copy, MessageSquare, Users, Hand, MoreVertical, Maximize, Minimize,
     Circle, Square, Pencil, BarChart3, Captions, CaptionsOff,
     Download, Timer, X, ChevronUp, ChevronDown, Settings2,
-    Hash, Lock, FileText, HelpCircle, Send
+    Hash, Lock, FileText, HelpCircle, Send, Share2
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import Chat from '../components/Chat';
@@ -46,9 +46,10 @@ export default function VideoMeetingPage() {
     const [unreadChats, setUnreadChats] = useState(0);
 
     // ── Captions ──
-    const [captionsOn, setCaptionsOn] = useState(false);
+    const [captionsOn, setCaptionsOn] = useState(true);
     const [captions, setCaptions] = useState([]);
     const recognitionRef = useRef(null);
+    const captionsOnRef = useRef(true);
 
     // ── Recording ──
     const [isRecording, setIsRecording] = useState(false);
@@ -135,6 +136,58 @@ export default function VideoMeetingPage() {
                 localStreamRef.current = stream;
                 if (localVideoRef.current) localVideoRef.current.srcObject = stream;
                 connectSignaling(stream);
+
+                // Auto-start captions (speech recognition)
+                try {
+                    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+                    if (SpeechRecognition && !recognitionRef.current) {
+                        const recognition = new SpeechRecognition();
+                        recognition.continuous = true;
+                        recognition.interimResults = true;
+                        recognition.lang = 'en-US';
+                        recognition.maxAlternatives = 1;
+
+                        recognition.onresult = (event) => {
+                            let finalText = '';
+                            let interimText = '';
+                            for (let i = event.resultIndex; i < event.results.length; i++) {
+                                const transcript = event.results[i][0].transcript;
+                                if (event.results[i].isFinal) finalText += transcript;
+                                else interimText += transcript;
+                            }
+                            if (finalText) {
+                                const elapsed = (Date.now() - meetingStartTimeRef.current) / 1000;
+                                transcriptRef.current.push({
+                                    speaker: user?.full_name || 'You',
+                                    text: finalText,
+                                    start_time: Math.max(0, elapsed - 5),
+                                    end_time: elapsed,
+                                    confidence: event.results[event.resultIndex]?.[0]?.confidence || 0.9,
+                                });
+                                setCaptions(prev => {
+                                    const updated = [...prev, { text: finalText, speaker: user?.full_name || 'You', time: Date.now(), final: true }];
+                                    return updated.slice(-8);
+                                });
+                            } else if (interimText) {
+                                setCaptions(prev => {
+                                    const filtered = prev.filter(c => c.final);
+                                    return [...filtered, { text: interimText, speaker: user?.full_name || 'You', time: Date.now(), final: false }];
+                                });
+                            }
+                        };
+                        recognition.onerror = (e) => {
+                            if (e.error !== 'no-speech' && e.error !== 'aborted') console.warn('Speech error:', e.error);
+                        };
+                        recognition.onend = () => {
+                            if (captionsOnRef.current && recognitionRef.current) {
+                                try { recognitionRef.current.start(); } catch { }
+                            }
+                        };
+
+                        recognition.start();
+                        recognitionRef.current = recognition;
+                    }
+                } catch { }
             })
             .catch(err => {
                 console.error("Media Error:", err);
@@ -362,41 +415,55 @@ export default function VideoMeetingPage() {
 
     const leavingRef = useRef(false);
 
-    const handleLeave = async () => {
+    const handleLeave = () => {
         if (leavingRef.current) return;
         leavingRef.current = true;
 
-        // Stop all streams
-        if (localStream) localStream.getTracks().forEach(t => t.stop());
-        if (screenStream) screenStream.getTracks().forEach(t => t.stop());
-        if (recognitionRef.current) recognitionRef.current.stop();
-        stopRecording(true);
-        wsRef.current?.close();
+        // === INSTANT CLEANUP — all synchronous ===
+        // Stop all media tracks (camera off, mic off)
+        if (localStream) {
+            localStream.getTracks().forEach(t => { t.stop(); t.enabled = false; });
+            setLocalStream(null);
+        }
+        if (screenStream) {
+            screenStream.getTracks().forEach(t => { t.stop(); t.enabled = false; });
+            setScreenStream(null);
+        }
+        setCamOn(false);
+        setMicOn(false);
 
-        // Auto-save transcript if we have captions data
+        // Stop speech recognition
+        try { recognitionRef.current?.stop(); } catch { }
+        recognitionRef.current = null;
+
+        // Stop recording
+        stopRecording(true);
+
+        // Close all peer connections
+        Object.values(peerConnections.current).forEach(pc => pc.close());
+        peerConnections.current = {};
+
+        // Close WebSocket (non-blocking)
+        try { wsRef.current?.close(); } catch { }
+        wsRef.current = null;
+
+        // === NAVIGATE IMMEDIATELY ===
+        navigate('/meetings');
+
+        // === BACKGROUND: save transcript (fire-and-forget) ===
         const entries = transcriptRef.current;
         if (entries.length > 0) {
-            const toastId = toast.loading('Saving transcript & running AI analysis...');
-            try {
-                const res = await videoMeetingAPI.saveTranscript(roomId, {
-                    title: roomInfo?.title || `Meeting ${new Date().toLocaleDateString()}`,
-                    transcript: entries,
-                    auto_analyze: true,
-                });
-                const { meeting_id, subtitle_count, analysis_status } = res.data;
-                if (analysis_status === 'analyzed') {
-                    toast.success(`Saved ${subtitle_count} lines & AI analysis complete!`, { id: toastId });
-                } else {
-                    toast.success(`Saved ${subtitle_count} lines. You can analyze later.`, { id: toastId });
-                }
-                navigate(`/meetings/${meeting_id}`);
-                return;
-            } catch (err) {
-                console.error('Auto-save failed:', err);
-                toast.error('Could not save transcript. Check meetings page.', { id: toastId });
-            }
+            videoMeetingAPI.saveTranscript(roomId, {
+                title: roomInfo?.title || `Meeting ${new Date().toLocaleDateString()}`,
+                transcript: entries,
+                auto_analyze: false,
+            }).then(res => {
+                const { subtitle_count } = res.data;
+                toast.success(`Saved ${subtitle_count} transcript lines. Analyze from meetings page.`);
+            }).catch(err => {
+                console.error('Background save failed:', err);
+            });
         }
-        navigate('/meetings');
     };
 
     const copyInvite = () => {
@@ -435,6 +502,7 @@ export default function VideoMeetingPage() {
         if (captionsOn) {
             if (recognitionRef.current) recognitionRef.current.stop();
             setCaptionsOn(false);
+            captionsOnRef.current = false;
             toast('Captions off');
         } else {
             try {
@@ -481,8 +549,8 @@ export default function VideoMeetingPage() {
                     if (e.error !== 'no-speech') console.error('Speech recognition error:', e.error);
                 };
                 recognition.onend = () => {
-                    // Auto-restart if user hasn't manually turned off
-                    if (captionsOn && recognitionRef.current) {
+                    // Auto-restart using ref (avoids stale closure)
+                    if (captionsOnRef.current && recognitionRef.current) {
                         try { recognitionRef.current.start(); } catch (e) { /* already running */ }
                     }
                 };
@@ -490,6 +558,7 @@ export default function VideoMeetingPage() {
                 recognition.start();
                 recognitionRef.current = recognition;
                 setCaptionsOn(true);
+                captionsOnRef.current = true;
                 toast.success('Captions on');
             } catch (e) {
                 toast.error('Failed to start captions');
@@ -898,8 +967,30 @@ export default function VideoMeetingPage() {
 
                             {/* Whiteboard Panel */}
                             {activePanel === 'whiteboard' && (
-                                <div style={{ flex: 1, minHeight: 400 }}>
+                                <div style={{ flex: 1, minHeight: 400, position: 'relative' }}>
                                     <Whiteboard ws={wsRef.current} isActive={activePanel === 'whiteboard'} />
+                                    <button
+                                        className="vm-notepad-copy"
+                                        style={{ position: 'absolute', top: 8, right: 8, zIndex: 10 }}
+                                        onClick={() => {
+                                            const canvas = document.querySelector('canvas');
+                                            if (canvas) {
+                                                canvas.toBlob((blob) => {
+                                                    const url = URL.createObjectURL(blob);
+                                                    const a = document.createElement('a');
+                                                    a.href = url;
+                                                    a.download = `whiteboard-${new Date().toISOString().slice(0, 10)}.png`;
+                                                    a.click();
+                                                    URL.revokeObjectURL(url);
+                                                    toast.success('Whiteboard saved!');
+                                                });
+                                            } else {
+                                                toast.error('No whiteboard to save');
+                                            }
+                                        }}
+                                    >
+                                        <Download size={14} /> Save Image
+                                    </button>
                                 </div>
                             )}
 
@@ -950,8 +1041,30 @@ export default function VideoMeetingPage() {
                                     )}
                                     {polls.map(poll => (
                                         <div key={poll.id} className="vm-poll-card">
-                                            <h4 className="vm-poll-question">{poll.question}</h4>
-                                            <p className="vm-poll-by">by {poll.creator}</p>
+                                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                                                <div>
+                                                    <h4 className="vm-poll-question">{poll.question}</h4>
+                                                    <p className="vm-poll-by">by {poll.creator}</p>
+                                                </div>
+                                                <button
+                                                    className="vm-notepad-copy"
+                                                    style={{ fontSize: '0.7rem', padding: '4px 8px' }}
+                                                    onClick={() => {
+                                                        const totalVotes = Object.values(poll.votes || {}).reduce((a, b) => a + b, 0);
+                                                        let text = `📊 Poll: ${poll.question}\n${'─'.repeat(30)}\n`;
+                                                        poll.options.forEach(opt => {
+                                                            const v = poll.votes?.[opt] || 0;
+                                                            const pct = totalVotes > 0 ? Math.round((v / totalVotes) * 100) : 0;
+                                                            text += `${opt}: ${v} votes (${pct}%)\n`;
+                                                        });
+                                                        text += `\nTotal: ${totalVotes} votes`;
+                                                        navigator.clipboard.writeText(text);
+                                                        toast.success('Poll results copied!');
+                                                    }}
+                                                >
+                                                    <Share2 size={12} /> Share
+                                                </button>
+                                            </div>
                                             <div className="vm-poll-options">
                                                 {poll.options.map(opt => {
                                                     const totalVotes = Object.values(poll.votes || {}).reduce((a, b) => a + b, 0);

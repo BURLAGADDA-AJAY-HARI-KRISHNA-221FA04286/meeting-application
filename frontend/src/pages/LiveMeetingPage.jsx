@@ -13,7 +13,8 @@ import {
     Maximize, Grid, Wind, Keyboard,
     Lock, FileText, Upload, RefreshCcw, Bell,
     Moon, Sun, Type, Eye, FileEdit, Focus, MousePointer2, UserMinus, Settings,
-    ListChecks, Calendar, Share, Link, Copy, CircleHelp, TriangleAlert
+    ListChecks, Calendar, Share, Link, Copy, CircleHelp, TriangleAlert,
+    Share2, Image
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import './LiveMeeting.css';
@@ -84,15 +85,96 @@ export default function LiveMeetingPage() {
     const [waitingScreen, setWaitingScreen] = useState(false);
     const [waitingUsers, setWaitingUsers] = useState([]);
     const [duration, setDuration] = useState(0);
+    const [captionsOn, setCaptionsOn] = useState(true);
 
     // Refs
     const wsRef = useRef(null);
     const stageRef = useRef(null);
+    const recognitionRef = useRef(null);
+    const captionsOnRef = useRef(true);
 
     // Keep camera stream ref in sync
     useEffect(() => {
         cameraStreamRef.current = cameraStream;
     }, [cameraStream]);
+
+    // Keep captionsOn ref in sync
+    useEffect(() => {
+        captionsOnRef.current = captionsOn;
+    }, [captionsOn]);
+
+    // ── Real-time Speech Recognition (auto-start) ──
+    useEffect(() => {
+        if (!isConnected) return;
+
+        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+        if (!SpeechRecognition) return;
+
+        const recognition = new SpeechRecognition();
+        recognition.continuous = true;
+        recognition.interimResults = true;
+        recognition.lang = 'en-US';
+        recognition.maxAlternatives = 1;
+
+        recognition.onresult = (event) => {
+            for (let i = event.resultIndex; i < event.results.length; i++) {
+                const transcript = event.results[i][0].transcript.trim();
+                if (!transcript) continue;
+
+                if (event.results[i].isFinal) {
+                    // Final result — add to subtitles & send to others
+                    const entry = {
+                        speaker: user?.full_name || 'You',
+                        text: transcript,
+                        timestamp: new Date().toISOString(),
+                        final: true,
+                    };
+                    setSubtitles(prev => [...prev.slice(-50), entry]);
+                    // Send to other participants via WebSocket
+                    try {
+                        wsRef.current?.send(JSON.stringify({
+                            type: 'SUBTITLE',
+                            speaker: entry.speaker,
+                            text: entry.text,
+                        }));
+                    } catch { }
+                } else {
+                    // Interim result — update live caption
+                    setSubtitles(prev => {
+                        const finals = prev.filter(s => s.final);
+                        return [...finals.slice(-50), {
+                            speaker: user?.full_name || 'You',
+                            text: transcript,
+                            final: false,
+                        }];
+                    });
+                }
+            }
+        };
+
+        recognition.onerror = (e) => {
+            if (e.error !== 'no-speech' && e.error !== 'aborted') {
+                console.warn('Speech recognition error:', e.error);
+            }
+        };
+
+        recognition.onend = () => {
+            // Auto-restart if still connected and captions enabled
+            if (captionsOnRef.current) {
+                try { recognition.start(); } catch { }
+            }
+        };
+
+        try {
+            recognition.start();
+            recognitionRef.current = recognition;
+        } catch { }
+
+        return () => {
+            try { recognition.stop(); } catch { }
+            recognitionRef.current = null;
+        };
+    }, [isConnected, user]);
 
     // ── Apply Settings Effects ──
     useEffect(() => {
@@ -505,10 +587,81 @@ export default function LiveMeetingPage() {
     };
 
     const handleEndMeeting = () => {
-        if (cameraStream) cameraStream.getTracks().forEach(t => t.stop());
-        if (screenStream) screenStream.getTracks().forEach(t => t.stop());
-        wsRef.current?.send(JSON.stringify({ type: 'LEAVE' }));
+        // Stop speech recognition first
+        setCaptionsOn(false);
+        captionsOnRef.current = false;
+        try { recognitionRef.current?.stop(); } catch { }
+        recognitionRef.current = null;
+
+        // Instantly stop all media tracks (camera + mic off)
+        if (cameraStream) {
+            cameraStream.getTracks().forEach(t => { t.stop(); t.enabled = false; });
+            setCameraStream(null);
+        }
+        if (screenStream) {
+            screenStream.getTracks().forEach(t => { t.stop(); t.enabled = false; });
+            setScreenStream(null);
+        }
+        setIsVideoOn(false);
+        setIsMuted(true);
+
+        // Close all peer connections instantly
+        Object.values(peerConnections.current).forEach(pc => pc.close());
+        peerConnections.current = {};
+        setPeers({});
+
+        // Send leave & close WS (non-blocking)
+        try { wsRef.current?.send(JSON.stringify({ type: 'LEAVE' })); } catch { }
+        try { wsRef.current?.close(); } catch { }
+        wsRef.current = null;
+
+        // Navigate immediately
         navigate('/meetings');
+    };
+
+    // ── Share Helpers ──
+    const shareNotepad = () => {
+        navigator.clipboard.writeText(sharedNote);
+        toast.success('Notes copied to clipboard!');
+    };
+
+    const shareWhiteboard = () => {
+        const canvas = document.querySelector('.whiteboard-canvas canvas');
+        if (canvas) {
+            canvas.toBlob((blob) => {
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `whiteboard-${meetingTitle || 'meeting'}-${new Date().toISOString().slice(0, 10)}.png`;
+                a.click();
+                URL.revokeObjectURL(url);
+                toast.success('Whiteboard saved as image!');
+            });
+        } else {
+            toast.error('No whiteboard content to save');
+        }
+    };
+
+    const sharePollResults = () => {
+        if (!activePoll) {
+            toast.error('No active poll to share');
+            return;
+        }
+        const totalVotes = activePoll.votes.reduce((a, b) => a + b, 0);
+        let text = `📊 Poll: ${activePoll.question}\n`;
+        text += '─'.repeat(30) + '\n';
+        activePoll.options.forEach((opt, i) => {
+            const pct = totalVotes ? Math.round((activePoll.votes[i] / totalVotes) * 100) : 0;
+            text += `${opt}: ${activePoll.votes[i]} votes (${pct}%)\n`;
+        });
+        text += `\nTotal votes: ${totalVotes}`;
+        navigator.clipboard.writeText(text);
+        toast.success('Poll results copied!');
+    };
+
+    const copyInviteLink = () => {
+        navigator.clipboard.writeText(window.location.href);
+        toast.success('Meeting link copied! Share it with anyone to join.');
     };
 
     // ── Keyboard Shortcuts ──
@@ -738,7 +891,22 @@ export default function LiveMeetingPage() {
                     <button className={`btn ${isHandRaised ? 'btn-warning' : 'btn-secondary'}`} onClick={toggleHandRaise} title="Raise Hand (H)">
                         <Hand size={16} />
                     </button>
-                    <button className="btn btn-danger" onClick={handleEndMeeting}>
+                    <button className={`btn ${captionsOn ? 'btn-primary' : 'btn-secondary'}`}
+                        onClick={() => {
+                            setCaptionsOn(!captionsOn);
+                            if (captionsOn) {
+                                try { recognitionRef.current?.stop(); } catch { }
+                            }
+                            toast(captionsOn ? 'Captions off' : 'Captions on');
+                        }}
+                        title="Toggle Captions"
+                    >
+                        <Type size={16} />
+                    </button>
+                    <button className="btn btn-ghost btn-sm" onClick={copyInviteLink} title="Copy Invite Link">
+                        <Share2 size={16} />
+                    </button>
+                    <button className="btn btn-danger" onClick={handleEndMeeting} title="Leave Meeting">
                         <PhoneOff size={16} /> Leave
                     </button>
                 </div>
@@ -767,8 +935,16 @@ export default function LiveMeetingPage() {
 
                     {/* Main Stage Content */}
                     {viewMode === 'whiteboard' ? (
-                        <div style={{ width: '100%', height: '100%', background: '#fff' }}>
+                        <div style={{ width: '100%', height: '100%', background: '#fff', position: 'relative' }}>
                             <Whiteboard ws={wsRef.current} isActive={true} />
+                            <button
+                                className="btn btn-secondary btn-sm"
+                                onClick={shareWhiteboard}
+                                title="Download whiteboard as image"
+                                style={{ position: 'absolute', top: 8, right: 8, zIndex: 10, display: 'flex', gap: 4, alignItems: 'center' }}
+                            >
+                                <Download size={14} /> Save
+                            </button>
                         </div>
                     ) : (
                         <div className="video-grid-layout">
@@ -824,14 +1000,23 @@ export default function LiveMeetingPage() {
                     )}
 
                     {/* Subtitles Overlay */}
-                    {subtitles.length > 0 && (
+                    {captionsOn && subtitles.length > 0 && (
                         <div style={{
                             position: 'absolute', bottom: 16, left: '50%', transform: 'translateX(-50%)',
-                            background: 'rgba(0,0,0,0.75)', color: '#fff', padding: '8px 16px',
-                            borderRadius: 8, maxWidth: '80%', textAlign: 'center', fontSize: '0.9rem',
-                            backdropFilter: 'blur(4px)'
+                            background: 'rgba(0,0,0,0.8)', color: '#fff', padding: '10px 20px',
+                            borderRadius: 10, maxWidth: '85%', textAlign: 'left', fontSize: '0.9rem',
+                            backdropFilter: 'blur(8px)', display: 'flex', flexDirection: 'column', gap: 4,
+                            maxHeight: 120, overflow: 'hidden'
                         }}>
-                            <strong>{subtitles[subtitles.length - 1]?.speaker}:</strong> {subtitles[subtitles.length - 1]?.text}
+                            {subtitles.slice(-3).map((s, i, arr) => (
+                                <div key={i} style={{
+                                    opacity: i === arr.length - 1 ? 1 : 0.6,
+                                    fontStyle: s.final === false ? 'italic' : 'normal',
+                                }}>
+                                    <strong style={{ color: '#a5b4fc' }}>{s.speaker}:</strong>{' '}
+                                    {s.text}
+                                </div>
+                            ))}
                         </div>
                     )}
                 </div>
@@ -927,14 +1112,28 @@ export default function LiveMeetingPage() {
                             />
                         )}
                         {sidebarTab === 'polls' && (
-                            <Polls
-                                ws={wsRef.current}
-                                activePoll={activePoll}
-                                isHost={myRole === 'host'}
-                                onCreatePoll={(pollData) => {
-                                    wsRef.current?.send(JSON.stringify({ type: 'POLL_CREATE', ...pollData }));
-                                }}
-                            />
+                            <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+                                {activePoll && (
+                                    <div style={{ padding: '8px 12px 0', display: 'flex', justifyContent: 'flex-end' }}>
+                                        <button
+                                            className="btn btn-ghost btn-sm"
+                                            onClick={sharePollResults}
+                                            title="Copy poll results"
+                                            style={{ display: 'flex', gap: 4, alignItems: 'center', fontSize: '0.75rem' }}
+                                        >
+                                            <Share2 size={12} /> Share Results
+                                        </button>
+                                    </div>
+                                )}
+                                <Polls
+                                    ws={wsRef.current}
+                                    activePoll={activePoll}
+                                    isHost={myRole === 'host'}
+                                    onCreatePoll={(pollData) => {
+                                        wsRef.current?.send(JSON.stringify({ type: 'POLL_CREATE', ...pollData }));
+                                    }}
+                                />
+                            </div>
                         )}
                         {sidebarTab === 'qa' && (
                             <QAPanel
@@ -951,9 +1150,19 @@ export default function LiveMeetingPage() {
                         )}
                         {sidebarTab === 'notepad' && (
                             <div style={{ padding: 12, height: '100%', display: 'flex', flexDirection: 'column' }}>
-                                <h4 style={{ fontSize: '0.85rem', color: 'var(--text-muted, #94a3b8)', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
-                                    <FileEdit size={14} /> Shared Notes
-                                </h4>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                                    <h4 style={{ fontSize: '0.85rem', color: 'var(--text-muted, #94a3b8)', display: 'flex', alignItems: 'center', gap: 6, margin: 0 }}>
+                                        <FileEdit size={14} /> Shared Notes
+                                    </h4>
+                                    <button
+                                        className="btn btn-ghost btn-sm"
+                                        onClick={shareNotepad}
+                                        title="Copy notes to clipboard"
+                                        style={{ display: 'flex', gap: 4, alignItems: 'center', fontSize: '0.75rem' }}
+                                    >
+                                        <Share2 size={12} /> Share
+                                    </button>
+                                </div>
                                 <textarea
                                     className="shared-notepad"
                                     value={sharedNote}

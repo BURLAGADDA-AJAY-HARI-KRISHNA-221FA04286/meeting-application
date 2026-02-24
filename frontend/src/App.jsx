@@ -15,6 +15,8 @@ const MeetingDetailPage = lazy(() => import('./pages/MeetingDetailPage'));
 const TaskBoardPage = lazy(() => import('./pages/TaskBoardPage'));
 const SettingsPage = lazy(() => import('./pages/SettingsPage'));
 const VideoMeetingPage = lazy(() => import('./pages/VideoMeetingPage'));
+const LiveMeetingPage = lazy(() => import('./pages/LiveMeetingPage'));
+const JoinMeetingPage = lazy(() => import('./pages/JoinMeetingPage'));
 
 /* ── Minimal full-screen loading spinner ── */
 function PageLoader() {
@@ -90,13 +92,15 @@ export default function App() {
 
               <Route path="/join/:roomId" element={<JoinRedirect />} />
               <Route path="/meetings/room/:roomId" element={<VideoMeetingPage />} />
+              <Route path="/meetings/:id/live" element={<LiveMeetingPage />} />
+
+              {/* Join meeting (easy access) */}
+              <Route path="/join" element={<JoinMeetingPage />} />
 
               {/* Legacy redirects */}
-              <Route path="/join" element={<Navigate to="/meetings/new" replace />} />
               <Route path="/video-meeting" element={<Navigate to="/meetings/new" replace />} />
               <Route path="/video-meeting/:roomId" element={<Navigate to="/meetings/new" replace />} />
               <Route path="/meetings/live" element={<Navigate to="/meetings/new" replace />} />
-              <Route path="/meetings/:id/live" element={<Navigate to="/meetings/new" replace />} />
             </Route>
 
             <Route path="*" element={<Navigate to="/dashboard" />} />
