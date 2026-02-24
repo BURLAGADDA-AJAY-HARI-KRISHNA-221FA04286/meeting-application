@@ -586,6 +586,22 @@ export default function LiveMeetingPage() {
         toast(emoji, { duration: 2000, style: { fontSize: '2rem' } });
     };
 
+    // ── Guarantee cleanup on tab close / navigation ──
+    useEffect(() => {
+        const onBeforeUnload = () => {
+            if (cameraStreamRef.current) {
+                cameraStreamRef.current.getTracks().forEach(t => t.stop());
+            }
+            try { recognitionRef.current?.stop(); } catch { }
+        };
+        window.addEventListener('beforeunload', onBeforeUnload);
+        window.addEventListener('pagehide', onBeforeUnload);
+        return () => {
+            window.removeEventListener('beforeunload', onBeforeUnload);
+            window.removeEventListener('pagehide', onBeforeUnload);
+        };
+    }, []);
+
     const handleEndMeeting = () => {
         // Stop speech recognition first
         setCaptionsOn(false);
@@ -593,24 +609,35 @@ export default function LiveMeetingPage() {
         try { recognitionRef.current?.stop(); } catch { }
         recognitionRef.current = null;
 
-        // Instantly stop all media tracks (camera + mic off)
+        // 1) Stop stream from ref (most reliable — always current)
+        if (cameraStreamRef.current) {
+            cameraStreamRef.current.getTracks().forEach(t => { t.stop(); t.enabled = false; });
+            cameraStreamRef.current = null;
+        }
+        // 2) Stop stream from state (in case ref was stale)
         if (cameraStream) {
             cameraStream.getTracks().forEach(t => { t.stop(); t.enabled = false; });
-            setCameraStream(null);
         }
+        setCameraStream(null);
+
+        // 3) Stop screen share
         if (screenStream) {
             screenStream.getTracks().forEach(t => { t.stop(); t.enabled = false; });
-            setScreenStream(null);
         }
+        setScreenStream(null);
+
+        // 4) Null out all video elements to release stream references
+        document.querySelectorAll('video').forEach(v => { v.srcObject = null; });
+
         setIsVideoOn(false);
         setIsMuted(true);
 
-        // Close all peer connections instantly
-        Object.values(peerConnections.current).forEach(pc => pc.close());
+        // 5) Close all peer connections
+        Object.values(peerConnections.current).forEach(pc => { try { pc.close(); } catch { } });
         peerConnections.current = {};
         setPeers({});
 
-        // Send leave & close WS (non-blocking)
+        // 6) Send leave & close WS (non-blocking)
         try { wsRef.current?.send(JSON.stringify({ type: 'LEAVE' })); } catch { }
         try { wsRef.current?.close(); } catch { }
         wsRef.current = null;

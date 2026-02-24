@@ -196,11 +196,22 @@ export default function VideoMeetingPage() {
             });
 
         return () => {
-            if (localStreamRef.current) localStreamRef.current.getTracks().forEach(t => t.stop());
-            if (wsRef.current) wsRef.current.close();
-            Object.values(peerConnections.current).forEach(pc => pc.close());
+            // CRITICAL: ensure camera/mic are fully released on unmount
+            if (localStreamRef.current) {
+                localStreamRef.current.getTracks().forEach(t => { t.stop(); t.enabled = false; });
+                localStreamRef.current = null;
+            }
+            // Null out video element to release stream reference
+            if (localVideoRef.current) {
+                localVideoRef.current.srcObject = null;
+            }
+            try { wsRef.current?.close(); } catch { }
+            wsRef.current = null;
+            Object.values(peerConnections.current).forEach(pc => { try { pc.close(); } catch { } });
             peerConnections.current = {};
-            if (recognitionRef.current) recognitionRef.current.stop();
+            captionsOnRef.current = false;
+            try { recognitionRef.current?.stop(); } catch { }
+            recognitionRef.current = null;
             stopRecording(true);
         };
     }, [roomId, user, navigate]);
@@ -415,42 +426,82 @@ export default function VideoMeetingPage() {
 
     const leavingRef = useRef(false);
 
+    // ── Nuclear media kill — guarantees camera/mic OFF ──
+    const killAllMedia = useCallback(() => {
+        // 1) Stop stream from ref (most reliable — always current)
+        if (localStreamRef.current) {
+            localStreamRef.current.getTracks().forEach(t => { t.stop(); t.enabled = false; });
+            localStreamRef.current = null;
+        }
+
+        // 2) Stop stream from state (in case ref was stale)
+        if (localStream) {
+            localStream.getTracks().forEach(t => { t.stop(); t.enabled = false; });
+        }
+        setLocalStream(null);
+
+        // 3) Stop screen share
+        if (screenStream) {
+            screenStream.getTracks().forEach(t => { t.stop(); t.enabled = false; });
+        }
+        setScreenStream(null);
+
+        // 4) Detach video element — critical! srcObject holds a reference
+        if (localVideoRef.current) {
+            localVideoRef.current.srcObject = null;
+        }
+
+        setCamOn(false);
+        setMicOn(false);
+
+        // 5) Stop speech recognition
+        captionsOnRef.current = false;
+        setCaptionsOn(false);
+        try { recognitionRef.current?.stop(); } catch { }
+        recognitionRef.current = null;
+
+        // 6) Stop recording
+        stopRecording(true);
+
+        // 7) Close all peer connections
+        Object.values(peerConnections.current).forEach(pc => {
+            try { pc.close(); } catch { }
+        });
+        peerConnections.current = {};
+
+        // 8) Close WebSocket
+        try { wsRef.current?.close(); } catch { }
+        wsRef.current = null;
+    }, [localStream, screenStream, stopRecording]);
+
+    // ── Guarantee cleanup on tab close / navigation ──
+    useEffect(() => {
+        const onBeforeUnload = () => {
+            // Stop all tracks synchronously on tab close
+            if (localStreamRef.current) {
+                localStreamRef.current.getTracks().forEach(t => t.stop());
+            }
+            try { recognitionRef.current?.stop(); } catch { }
+        };
+        window.addEventListener('beforeunload', onBeforeUnload);
+        window.addEventListener('pagehide', onBeforeUnload);
+        return () => {
+            window.removeEventListener('beforeunload', onBeforeUnload);
+            window.removeEventListener('pagehide', onBeforeUnload);
+        };
+    }, []);
+
     const handleLeave = () => {
         if (leavingRef.current) return;
         leavingRef.current = true;
 
-        // === INSTANT CLEANUP — all synchronous ===
-        // Stop all media tracks (camera off, mic off)
-        if (localStream) {
-            localStream.getTracks().forEach(t => { t.stop(); t.enabled = false; });
-            setLocalStream(null);
-        }
-        if (screenStream) {
-            screenStream.getTracks().forEach(t => { t.stop(); t.enabled = false; });
-            setScreenStream(null);
-        }
-        setCamOn(false);
-        setMicOn(false);
+        // Kill all media IMMEDIATELY
+        killAllMedia();
 
-        // Stop speech recognition
-        try { recognitionRef.current?.stop(); } catch { }
-        recognitionRef.current = null;
-
-        // Stop recording
-        stopRecording(true);
-
-        // Close all peer connections
-        Object.values(peerConnections.current).forEach(pc => pc.close());
-        peerConnections.current = {};
-
-        // Close WebSocket (non-blocking)
-        try { wsRef.current?.close(); } catch { }
-        wsRef.current = null;
-
-        // === NAVIGATE IMMEDIATELY ===
+        // Navigate INSTANTLY
         navigate('/meetings');
 
-        // === BACKGROUND: save transcript (fire-and-forget) ===
+        // Background: save transcript (fire-and-forget)
         const entries = transcriptRef.current;
         if (entries.length > 0) {
             videoMeetingAPI.saveTranscript(roomId, {
