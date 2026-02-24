@@ -1495,3 +1495,51 @@
     background: rgba(99, 102, 241, 0.2);
     border-color: rgba(99, 102, 241, 0.4);
 }
+
+/* ── Notepad Actions Row ── */
+.vm-notepad-actions {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+}
+
+.vm-notepad-actions .vm-notepad-copy {
+    flex: 1;
+    min-width: 80px;
+    padding: 6px 8px;
+    font-size: 0.75rem;
+}
+
+.vm-share-btn {
+    background: rgba(34, 197, 94, 0.12) !important;
+    border-color: rgba(34, 197, 94, 0.25) !important;
+    color: #4ade80 !important;
+}
+
+.vm-share-btn:hover {
+    background: rgba(34, 197, 94, 0.25) !important;
+    border-color: rgba(34, 197, 94, 0.4) !important;
+}
+
+/* ── Kick Button ── */
+.vm-kick-btn {
+    background: none;
+    border: none;
+    color: rgba(239, 68, 68, 0.5);
+    cursor: pointer;
+    padding: 3px;
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    opacity: 0;
+    transition: all 0.15s;
+}
+
+.vm-participant-item:hover .vm-kick-btn {
+    opacity: 1;
+}
+
+.vm-kick-btn:hover {
+    color: #ef4444;
+    background: rgba(239, 68, 68, 0.15);
+}

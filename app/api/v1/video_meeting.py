@@ -381,8 +381,28 @@ async def video_meeting_websocket(
                     "option": data.get("option"),
                 }, exclude=websocket)
 
-            elif msg_type == "WHITEBOARD":
+            elif msg_type == "WHITEBOARD" or msg_type == "whiteboard":
                 await broadcast(code, data, exclude=websocket)
+
+            elif msg_type == "kick":
+                # Host is kicking a participant — send KICKED event to that user
+                target_user_id = data.get("target_user_id")
+                if target_user_id is not None:
+                    # Find the target's websocket and send kick
+                    for prt in room.get("participants", []):
+                        if str(prt.get("user_id")) == str(target_user_id):
+                            target_ws = prt.get("ws")
+                            if target_ws:
+                                try:
+                                    await target_ws.send_json({
+                                        "type": "KICKED",
+                                        "reason": "Host removed you from the meeting",
+                                        "target_user_id": target_user_id,
+                                    })
+                                except Exception:
+                                    pass
+                            break
+                    logger.info(f"User {display_name} kicked user {target_user_id} from room {code}")
 
     except WebSocketDisconnect:
         try:

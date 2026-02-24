@@ -97,6 +97,7 @@ export default function VideoMeetingPage() {
     const wsRef = useRef(null);
     const localVideoRef = useRef(null);
     const localStreamRef = useRef(null);
+    const screenVideoRef = useRef(null);
     const peerConnections = useRef({});
     const containerRef = useRef(null);
 
@@ -228,6 +229,13 @@ export default function VideoMeetingPage() {
         };
     }, [roomId, user, navigate]);
 
+    // Sync screen share stream with its video ref
+    useEffect(() => {
+        if (screenVideoRef.current) {
+            screenVideoRef.current.srcObject = screenStream || null;
+        }
+    }, [screenStream]);
+
     /* ═══════════════════════════════════════════════
        KEYBOARD SHORTCUTS
        ═══════════════════════════════════════════════ */
@@ -304,6 +312,24 @@ export default function VideoMeetingPage() {
                         break;
                     case 'whiteboard':
                         // Handled internally by Whiteboard component
+                        break;
+                    case 'KICKED':
+                    case 'kick':
+                        // If this kick targets the current user
+                        if (String(data.target_user_id) === String(user?.id) || data.reason) {
+                            toast.error('You have been removed from the meeting');
+                            killAllMedia();
+                            navigate('/meetings');
+                        }
+                        break;
+                    case 'shared-notes':
+                        setChatMessages(prev => [...prev, {
+                            sender: data.sender_name || 'Someone',
+                            text: `📝 **Shared Notes:**\n${data.text}`,
+                            isMe: false,
+                            timestamp: new Date().toISOString()
+                        }]);
+                        toast('📝 Notes shared with everyone!');
                         break;
                     default:
                         break;
@@ -403,6 +429,7 @@ export default function VideoMeetingPage() {
         if (screenStream) {
             screenStream.getTracks().forEach(t => t.stop());
             setScreenStream(null);
+            if (screenVideoRef.current) screenVideoRef.current.srcObject = null;
             if (localStream) {
                 const videoTrack = localStream.getVideoTracks()[0];
                 Object.values(peerConnections.current).forEach(pc => {
@@ -412,8 +439,13 @@ export default function VideoMeetingPage() {
             }
         } else {
             try {
-                const stream = await navigator.mediaDevices.getDisplayMedia({ video: { cursor: 'always' } });
+                const stream = await navigator.mediaDevices.getDisplayMedia({
+                    video: { cursor: 'always', frameRate: { ideal: 30 } },
+                    audio: false,
+                });
                 setScreenStream(stream);
+                // Attach to dedicated ref to avoid re-render flickering
+                if (screenVideoRef.current) screenVideoRef.current.srcObject = stream;
                 const screenTrack = stream.getVideoTracks()[0];
                 screenTrack.onended = () => {
                     setScreenStream(null);
@@ -916,8 +948,9 @@ export default function VideoMeetingPage() {
                         {screenStream && (
                             <div className="vm-video-tile screen-share-tile">
                                 <video
-                                    ref={ref => { if (ref) ref.srcObject = screenStream; }}
+                                    ref={screenVideoRef}
                                     autoPlay muted playsInline
+                                    style={{ objectFit: 'contain', background: '#000' }}
                                 />
                                 <div className="vm-video-label">
                                     <span className="vm-video-name"><Monitor size={12} /> Screen Share</span>
@@ -1024,6 +1057,20 @@ export default function VideoMeetingPage() {
                                             </div>
                                             <div className="vm-participant-status">
                                                 {raisedHands.has(p.name) && <span>✋</span>}
+                                                <button
+                                                    className="vm-kick-btn"
+                                                    title={`Remove ${p.name}`}
+                                                    onClick={() => {
+                                                        if (confirm(`Remove ${p.name} from the meeting?`)) {
+                                                            wsRef.current?.send(JSON.stringify({
+                                                                type: 'kick', target_user_id: p.id
+                                                            }));
+                                                            toast.success(`${p.name} has been removed`);
+                                                        }
+                                                    }}
+                                                >
+                                                    <X size={12} />
+                                                </button>
                                             </div>
                                         </div>
                                     ))}
@@ -1231,15 +1278,50 @@ export default function VideoMeetingPage() {
                                         placeholder="Type your meeting notes here..."
                                         spellCheck={false}
                                     />
-                                    <button
-                                        className="vm-notepad-copy"
-                                        onClick={() => {
-                                            navigator.clipboard.writeText(notepadText);
-                                            toast.success('Notes copied!');
-                                        }}
-                                    >
-                                        <Copy size={14} /> Copy Notes
-                                    </button>
+                                    <div className="vm-notepad-actions">
+                                        <button
+                                            className="vm-notepad-copy"
+                                            onClick={() => {
+                                                navigator.clipboard.writeText(notepadText);
+                                                toast.success('Notes copied!');
+                                            }}
+                                        >
+                                            <Copy size={14} /> Copy
+                                        </button>
+                                        <button
+                                            className="vm-notepad-copy"
+                                            onClick={() => {
+                                                const blob = new Blob([notepadText], { type: 'text/plain' });
+                                                const url = URL.createObjectURL(blob);
+                                                const a = document.createElement('a');
+                                                a.href = url;
+                                                a.download = `meeting-notes-${new Date().toISOString().slice(0, 10)}.txt`;
+                                                a.click();
+                                                URL.revokeObjectURL(url);
+                                                toast.success('Notes downloaded!');
+                                            }}
+                                        >
+                                            <Download size={14} /> Download TXT
+                                        </button>
+                                        <button
+                                            className="vm-notepad-copy vm-share-btn"
+                                            onClick={() => {
+                                                wsRef.current?.send(JSON.stringify({
+                                                    type: 'chat',
+                                                    text: `📝 **Shared Notes:**\n${notepadText}`
+                                                }));
+                                                setChatMessages(prev => [...prev, {
+                                                    sender: user?.full_name || 'You',
+                                                    text: `📝 **Shared Notes:**\n${notepadText}`,
+                                                    isMe: true,
+                                                    timestamp: new Date().toISOString()
+                                                }]);
+                                                toast.success('Notes shared to chat!');
+                                            }}
+                                        >
+                                            <Share2 size={14} /> Share to All
+                                        </button>
+                                    </div>
                                 </div>
                             )}
                         </div>
