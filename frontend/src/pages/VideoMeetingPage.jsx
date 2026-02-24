@@ -125,13 +125,22 @@ export default function VideoMeetingPage() {
         if (!user) return;
 
         if (!roomId) {
-            // Redirect to join page so users get meeting code + password
             navigate('/meetings/new', { replace: true });
             return;
         }
 
+        // CRITICAL: abort flag prevents orphaned streams from StrictMode double-mount
+        let cancelled = false;
+
         navigator.mediaDevices.getUserMedia({ video: true, audio: true })
             .then(stream => {
+                // If cleanup already ran (StrictMode), kill this stream immediately
+                if (cancelled) {
+                    console.warn('[VideoMeeting] Cleanup already ran — stopping orphaned stream');
+                    stream.getTracks().forEach(t => { t.stop(); t.enabled = false; });
+                    return;
+                }
+
                 setLocalStream(stream);
                 localStreamRef.current = stream;
                 if (localVideoRef.current) localVideoRef.current.srcObject = stream;
@@ -190,18 +199,21 @@ export default function VideoMeetingPage() {
                 } catch { }
             })
             .catch(err => {
+                if (cancelled) return; // Don't show errors if already cleaning up
                 console.error("Media Error:", err);
                 toast.error('Camera/microphone access denied');
                 connectSignaling(null);
             });
 
         return () => {
-            // CRITICAL: ensure camera/mic are fully released on unmount
+            // Set abort flag FIRST — prevents late-resolving getUserMedia from leaking
+            cancelled = true;
+
+            // Stop any stream that IS already stored
             if (localStreamRef.current) {
                 localStreamRef.current.getTracks().forEach(t => { t.stop(); t.enabled = false; });
                 localStreamRef.current = null;
             }
-            // Null out video element to release stream reference
             if (localVideoRef.current) {
                 localVideoRef.current.srcObject = null;
             }
@@ -212,7 +224,7 @@ export default function VideoMeetingPage() {
             captionsOnRef.current = false;
             try { recognitionRef.current?.stop(); } catch { }
             recognitionRef.current = null;
-            stopRecording(true);
+            try { stopRecording(true); } catch { }
         };
     }, [roomId, user, navigate]);
 
@@ -446,10 +458,14 @@ export default function VideoMeetingPage() {
         }
         setScreenStream(null);
 
-        // 4) Detach video element — critical! srcObject holds a reference
-        if (localVideoRef.current) {
-            localVideoRef.current.srcObject = null;
-        }
+        // 4) Null out ALL video elements on the page — releases any held stream references
+        document.querySelectorAll('video').forEach(v => {
+            if (v.srcObject) {
+                const s = v.srcObject;
+                s.getTracks().forEach(t => { t.stop(); t.enabled = false; });
+                v.srcObject = null;
+            }
+        });
 
         setCamOn(false);
         setMicOn(false);
