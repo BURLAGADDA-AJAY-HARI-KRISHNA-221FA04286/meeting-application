@@ -292,7 +292,7 @@ export default function MeetingDetailPage() {
                     {!hasAnalysis ? (
                         <motion.button
                             className="btn btn-primary btn-lg"
-                            onClick={handleAnalyze}
+                            onClick={() => handleAnalyze(false)}
                             disabled={analyzing}
                             whileHover={{ scale: 1.02 }}
                             whileTap={{ scale: 0.98 }}
@@ -320,7 +320,7 @@ export default function MeetingDetailPage() {
 
             {/* ── Transcript (collapsible) ── */}
             <motion.div className="card transcript-section" {...fadeUp} transition={{ delay: 0.05 }}>
-                <button className="transcript-toggle" onClick={() => setShowTranscript(!showTranscript)}>
+                <div className="transcript-toggle" onClick={() => setShowTranscript(!showTranscript)} role="button" tabIndex={0}>
                     <span style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 700 }}>
                         <FileText size={18} /> Transcript
                         {meeting.transcript && <span className="badge badge-info" style={{ fontWeight: 500, fontSize: '0.7rem' }}>
@@ -339,7 +339,7 @@ export default function MeetingDetailPage() {
                         )}
                         {showTranscript ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
                     </div>
-                </button>
+                </div>
                 <AnimatePresence>
                     {showTranscript && (
                         <motion.div
