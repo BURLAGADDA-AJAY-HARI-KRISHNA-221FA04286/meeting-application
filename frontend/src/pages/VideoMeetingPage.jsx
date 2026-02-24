@@ -427,7 +427,7 @@ export default function VideoMeetingPage() {
     const leavingRef = useRef(false);
 
     // ── Nuclear media kill — guarantees camera/mic OFF ──
-    const killAllMedia = useCallback(() => {
+    const killAllMedia = () => {
         // 1) Stop stream from ref (most reliable — always current)
         if (localStreamRef.current) {
             localStreamRef.current.getTracks().forEach(t => { t.stop(); t.enabled = false; });
@@ -460,19 +460,16 @@ export default function VideoMeetingPage() {
         try { recognitionRef.current?.stop(); } catch { }
         recognitionRef.current = null;
 
-        // 6) Stop recording
-        stopRecording(true);
-
-        // 7) Close all peer connections
+        // 6) Close all peer connections
         Object.values(peerConnections.current).forEach(pc => {
             try { pc.close(); } catch { }
         });
         peerConnections.current = {};
 
-        // 8) Close WebSocket
+        // 7) Close WebSocket
         try { wsRef.current?.close(); } catch { }
         wsRef.current = null;
-    }, [localStream, screenStream, stopRecording]);
+    };
 
     // ── Guarantee cleanup on tab close / navigation ──
     useEffect(() => {
@@ -497,6 +494,7 @@ export default function VideoMeetingPage() {
 
         // Kill all media IMMEDIATELY
         killAllMedia();
+        try { stopRecording(true); } catch { }
 
         // Navigate INSTANTLY
         navigate('/meetings');
