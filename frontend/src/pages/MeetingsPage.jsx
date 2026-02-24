@@ -60,9 +60,26 @@ export default function MeetingsPage() {
     if (loading) {
         return (
             <div className="page-container">
-                <div className="loading-screen">
-                    <div className="spinner spinner-lg" />
-                    <span>Loading meetings…</span>
+                <div className="page-header" style={{ marginBottom: 20 }}>
+                    <div>
+                        <div style={{ width: 160, height: 28, background: 'rgba(99,102,241,0.08)', borderRadius: 8 }} />
+                        <div style={{ width: 220, height: 14, background: 'rgba(99,102,241,0.05)', borderRadius: 6, marginTop: 8 }} />
+                    </div>
+                </div>
+                <div className="meetings-grid">
+                    {[1, 2, 3, 4, 5, 6].map(i => (
+                        <div key={i} className="card" style={{ padding: 20 }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 16 }}>
+                                <div style={{ width: 32, height: 32, background: 'rgba(99,102,241,0.08)', borderRadius: 8 }} />
+                            </div>
+                            <div style={{ width: '80%', height: 18, background: 'rgba(99,102,241,0.08)', borderRadius: 6, marginBottom: 8 }} />
+                            <div style={{ width: '60%', height: 12, background: 'rgba(99,102,241,0.05)', borderRadius: 4, marginBottom: 16 }} />
+                            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                                <div style={{ width: 80, height: 12, background: 'rgba(99,102,241,0.05)', borderRadius: 4 }} />
+                                <div style={{ width: 64, height: 20, background: 'rgba(99,102,241,0.06)', borderRadius: 10 }} />
+                            </div>
+                        </div>
+                    ))}
                 </div>
             </div>
         );

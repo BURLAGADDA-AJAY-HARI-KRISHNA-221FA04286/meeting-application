@@ -44,6 +44,28 @@ api.interceptors.response.use(
     }
 );
 
+// ── Simple in-memory cache for GET requests ──
+const _cache = new Map();
+const CACHE_TTL = 30_000; // 30 seconds
+
+function cachedGet(url, params, ttl = CACHE_TTL) {
+    const key = url + (params ? JSON.stringify(params) : '');
+    const cached = _cache.get(key);
+    if (cached && Date.now() - cached.time < ttl) {
+        return Promise.resolve(cached.data);
+    }
+    return api.get(url, params ? { params } : undefined).then(res => {
+        _cache.set(key, { data: res, time: Date.now() });
+        return res;
+    });
+}
+
+function invalidateCache(prefix) {
+    for (const key of _cache.keys()) {
+        if (key.startsWith(prefix)) _cache.delete(key);
+    }
+}
+
 // ── Auth ──
 export const authAPI = {
     register: (data) => api.post('/register', data),
@@ -55,12 +77,12 @@ export const authAPI = {
 
 // ── Meetings ──
 export const meetingsAPI = {
-    list: (params = {}) => api.get('/meetings', { params }),
+    list: (params = {}) => cachedGet('/meetings', Object.keys(params).length ? params : null),
     get: (id) => api.get(`/meetings/${id}`),
-    create: (data) => api.post('/meetings', data),
-    update: (id, data) => api.patch(`/meetings/${id}`, data),
-    delete: (id) => api.delete(`/meetings/${id}`),
-    dashboard: () => api.get('/meetings/dashboard'),
+    create: (data) => api.post('/meetings', data).then(r => { invalidateCache('/meetings'); return r; }),
+    update: (id, data) => api.patch(`/meetings/${id}`, data).then(r => { invalidateCache('/meetings'); return r; }),
+    delete: (id) => api.delete(`/meetings/${id}`).then(r => { invalidateCache('/meetings'); return r; }),
+    dashboard: () => cachedGet('/meetings/dashboard'),
     uploadMedia: (file, title = '', autoAnalyze = true) => {
         const formData = new FormData();
         formData.append('file', file);

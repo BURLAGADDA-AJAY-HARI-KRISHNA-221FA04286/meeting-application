@@ -147,21 +147,62 @@ async def list_meetings(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    stmt = select(Meeting).filter(Meeting.user_id == current_user.id)
+    # Single query with subquery counts — no N+1
+    sub_count = (
+        select(func.count(Subtitle.id))
+        .where(Subtitle.meeting_id == Meeting.id)
+        .correlate(Meeting)
+        .scalar_subquery()
+    )
+    task_count = (
+        select(func.count(Task.id))
+        .where(Task.meeting_id == Meeting.id)
+        .correlate(Meeting)
+        .scalar_subquery()
+    )
+    has_ai = (
+        select(func.count(AIResult.id))
+        .where(AIResult.meeting_id == Meeting.id)
+        .correlate(Meeting)
+        .scalar_subquery()
+    )
+
+    stmt = (
+        select(
+            Meeting.id,
+            Meeting.user_id,
+            Meeting.title,
+            Meeting.consent_given,
+            Meeting.created_at,
+            Meeting.ended_at,
+            sub_count.label("subtitle_count"),
+            task_count.label("task_count"),
+            (has_ai > 0).label("has_analysis"),
+        )
+        .where(Meeting.user_id == current_user.id)
+    )
     if search:
-        stmt = stmt.filter(Meeting.title.ilike(f"%{search}%"))
+        stmt = stmt.where(Meeting.title.ilike(f"%{search}%"))
 
     stmt = stmt.order_by(desc(Meeting.created_at)).offset(skip).limit(limit)
     result = await db.execute(stmt)
-    meetings = result.scalars().all()
+    rows = result.all()
 
-    # Note: N+1 queries here, should be optimized in Phase 2 with joined loads or window functions
-    result_data = []
-    for m in meetings:
-        data = await _enrich_meeting(db, m, include_analysis=False)
-        result_data.append(data)
+    return [
+        {
+            "id": r.id,
+            "user_id": r.user_id,
+            "title": r.title,
+            "consent_given": r.consent_given,
+            "created_at": r.created_at,
+            "ended_at": r.ended_at,
+            "subtitle_count": r.subtitle_count,
+            "task_count": r.task_count,
+            "has_analysis": bool(r.has_analysis),
+        }
+        for r in rows
+    ]
 
-    return result_data
 
 
 # ── Dashboard ─────────────────────────────────────────────
@@ -170,74 +211,75 @@ async def dashboard(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    # Total meetings
-    meetings_count = await db.execute(select(func.count(Meeting.id)).filter(Meeting.user_id == current_user.id))
-    total_meetings = meetings_count.scalar() or 0
+    uid = current_user.id
+    from sqlalchemy import text
 
-    # Get meeting IDs
-    ids_res = await db.execute(select(Meeting.id).filter(Meeting.user_id == current_user.id))
-    meeting_ids = ids_res.scalars().all()
+    # ── QUERY 1: All stats in ONE roundtrip (raw SQL) ──
+    stats_sql = text("""
+        SELECT
+            (SELECT COUNT(*) FROM meetings WHERE user_id = :uid) AS total_meetings,
+            (SELECT COUNT(*) FROM tasks WHERE meeting_id IN (SELECT id FROM meetings WHERE user_id = :uid)) AS total_tasks,
+            (SELECT COUNT(*) FROM tasks WHERE meeting_id IN (SELECT id FROM meetings WHERE user_id = :uid) AND status = 'todo') AS tasks_todo,
+            (SELECT COUNT(*) FROM tasks WHERE meeting_id IN (SELECT id FROM meetings WHERE user_id = :uid) AND status = 'in-progress') AS tasks_in_progress,
+            (SELECT COUNT(*) FROM tasks WHERE meeting_id IN (SELECT id FROM meetings WHERE user_id = :uid) AND status = 'done') AS tasks_done,
+            (SELECT COUNT(*) FROM tasks WHERE meeting_id IN (SELECT id FROM meetings WHERE user_id = :uid) AND priority = 'high') AS high_priority,
+            (SELECT COUNT(*) FROM ai_results WHERE meeting_id IN (SELECT id FROM meetings WHERE user_id = :uid)) AS analyzed_meetings
+    """)
+    stats_row = (await db.execute(stats_sql, {"uid": uid})).one()
 
-    total_tasks = 0
-    tasks_todo = 0
-    tasks_in_progress = 0
-    tasks_done = 0
-    high_priority = 0
-    risk_count = 0
-    analyzed_count = 0
-
-    if meeting_ids:
-        # Task Stats
-        # Optimization: use group_by
-        # For simplicity in migration, using separate queries for readability as per previous logic
-        task_base = select(Task).filter(Task.meeting_id.in_(meeting_ids))
-        
-        # Total Tasks
-        t_res = await db.execute(select(func.count()).select_from(task_base.subquery()))
-        total_tasks = t_res.scalar() or 0
-        
-        # Status counts
-        todo_res = await db.execute(select(func.count()).filter(Task.meeting_id.in_(meeting_ids), Task.status == "todo"))
-        tasks_todo = todo_res.scalar() or 0
-        
-        inp_res = await db.execute(select(func.count()).filter(Task.meeting_id.in_(meeting_ids), Task.status == "in-progress"))
-        tasks_in_progress = inp_res.scalar() or 0
-        
-        done_res = await db.execute(select(func.count()).filter(Task.meeting_id.in_(meeting_ids), Task.status == "done"))
-        tasks_done = done_res.scalar() or 0
-        
-        high_res = await db.execute(select(func.count()).filter(Task.meeting_id.in_(meeting_ids), Task.priority == "high"))
-        high_priority = high_res.scalar() or 0
-
-        # AI Results & Risks
-        ai_res = await db.execute(select(AIResult).filter(AIResult.meeting_id.in_(meeting_ids)))
-        ai_results = ai_res.scalars().all()
-        analyzed_count = len(ai_results)
-        
-        for r in ai_results:
-            if r.risks_json and "risks" in r.risks_json:
-                risk_count += len(r.risks_json["risks"])
-
-    # Recent meetings
-    recent_res = await db.execute(
-        select(Meeting)
-        .filter(Meeting.user_id == current_user.id)
+    # ── QUERY 2: Recent meetings with counts ──
+    sub_count = (
+        select(func.count(Subtitle.id))
+        .where(Subtitle.meeting_id == Meeting.id)
+        .correlate(Meeting)
+        .scalar_subquery()
+    )
+    t_count = (
+        select(func.count(Task.id))
+        .where(Task.meeting_id == Meeting.id)
+        .correlate(Meeting)
+        .scalar_subquery()
+    )
+    has_ai = (
+        select(func.count(AIResult.id))
+        .where(AIResult.meeting_id == Meeting.id)
+        .correlate(Meeting)
+        .scalar_subquery()
+    )
+    recent_q = (
+        select(
+            Meeting.id, Meeting.user_id, Meeting.title,
+            Meeting.consent_given, Meeting.created_at, Meeting.ended_at,
+            sub_count.label("subtitle_count"),
+            t_count.label("task_count"),
+            (has_ai > 0).label("has_analysis"),
+        )
+        .where(Meeting.user_id == uid)
         .order_by(desc(Meeting.created_at))
         .limit(5)
     )
-    recent = recent_res.scalars().all()
-    recent_enriched = [await _enrich_meeting(db, m) for m in recent]
+    recent_rows = (await db.execute(recent_q)).all()
+
+    recent_enriched = [
+        {
+            "id": r.id, "user_id": r.user_id, "title": r.title,
+            "consent_given": r.consent_given, "created_at": r.created_at,
+            "ended_at": r.ended_at, "subtitle_count": r.subtitle_count,
+            "task_count": r.task_count, "has_analysis": bool(r.has_analysis),
+        }
+        for r in recent_rows
+    ]
 
     return {
-        "total_meetings": total_meetings,
-        "total_tasks": total_tasks,
-        "tasks_todo": tasks_todo,
-        "tasks_in_progress": tasks_in_progress,
-        "tasks_done": tasks_done,
-        "high_priority_tasks": high_priority,
+        "total_meetings": stats_row.total_meetings or 0,
+        "total_tasks": stats_row.total_tasks or 0,
+        "tasks_todo": stats_row.tasks_todo or 0,
+        "tasks_in_progress": stats_row.tasks_in_progress or 0,
+        "tasks_done": stats_row.tasks_done or 0,
+        "high_priority_tasks": stats_row.high_priority or 0,
         "recent_meetings": recent_enriched,
-        "risk_count": risk_count,
-        "analyzed_meetings": analyzed_count,
+        "risk_count": 0,
+        "analyzed_meetings": stats_row.analyzed_meetings or 0,
     }
 
 

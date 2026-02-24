@@ -43,9 +43,24 @@ export default function DashboardPage() {
     if (loading) {
         return (
             <div className="page-container">
-                <div className="loading-screen">
-                    <div className="spinner spinner-lg" />
-                    <span>Loading dashboard…</span>
+                {/* Skeleton: shows page structure instantly while data loads */}
+                <div className="page-header" style={{ marginBottom: 28 }}>
+                    <div>
+                        <div style={{ width: 240, height: 32, background: 'rgba(99,102,241,0.08)', borderRadius: 8 }} />
+                        <div style={{ width: 180, height: 16, background: 'rgba(99,102,241,0.05)', borderRadius: 6, marginTop: 8 }} />
+                    </div>
+                </div>
+                <div className="grid-4" style={{ marginBottom: 28 }}>
+                    {[1, 2, 3, 4].map(i => (
+                        <div key={i} className="stat-card" style={{ padding: 24 }}>
+                            <div style={{ width: 36, height: 36, background: 'rgba(99,102,241,0.08)', borderRadius: 8, marginBottom: 12 }} />
+                            <div style={{ width: 60, height: 28, background: 'rgba(99,102,241,0.08)', borderRadius: 6, marginBottom: 6 }} />
+                            <div style={{ width: 100, height: 14, background: 'rgba(99,102,241,0.05)', borderRadius: 4 }} />
+                        </div>
+                    ))}
+                </div>
+                <div className="card" style={{ padding: 24 }}>
+                    <div style={{ width: 180, height: 20, background: 'rgba(99,102,241,0.08)', borderRadius: 6 }} />
                 </div>
             </div>
         );
