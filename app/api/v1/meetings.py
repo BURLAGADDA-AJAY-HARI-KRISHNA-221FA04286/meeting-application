@@ -248,16 +248,21 @@ async def dashboard(
     uid = current_user.id
     from sqlalchemy import text
 
-    # ── QUERY 1: All stats in ONE roundtrip (raw SQL) ──
+    # ── QUERY 1: All stats in ONE roundtrip (Optimized O(N) pass) ──
     stats_sql = text("""
+        WITH user_meetings AS (
+            SELECT id FROM meetings WHERE user_id = :uid
+        )
         SELECT
-            (SELECT COUNT(*) FROM meetings WHERE user_id = :uid) AS total_meetings,
-            (SELECT COUNT(*) FROM tasks WHERE meeting_id IN (SELECT id FROM meetings WHERE user_id = :uid)) AS total_tasks,
-            (SELECT COUNT(*) FROM tasks WHERE meeting_id IN (SELECT id FROM meetings WHERE user_id = :uid) AND status = 'todo') AS tasks_todo,
-            (SELECT COUNT(*) FROM tasks WHERE meeting_id IN (SELECT id FROM meetings WHERE user_id = :uid) AND status = 'in-progress') AS tasks_in_progress,
-            (SELECT COUNT(*) FROM tasks WHERE meeting_id IN (SELECT id FROM meetings WHERE user_id = :uid) AND status = 'done') AS tasks_done,
-            (SELECT COUNT(*) FROM tasks WHERE meeting_id IN (SELECT id FROM meetings WHERE user_id = :uid) AND priority = 'high') AS high_priority,
-            (SELECT COUNT(*) FROM ai_results WHERE meeting_id IN (SELECT id FROM meetings WHERE user_id = :uid)) AS analyzed_meetings
+            (SELECT COUNT(id) FROM user_meetings) AS total_meetings,
+            (SELECT COUNT(id) FROM ai_results WHERE meeting_id IN (SELECT id FROM user_meetings)) AS analyzed_meetings,
+            COUNT(t.id) AS total_tasks,
+            COUNT(t.id) FILTER (WHERE t.status = 'todo') AS tasks_todo,
+            COUNT(t.id) FILTER (WHERE t.status = 'in-progress') AS tasks_in_progress,
+            COUNT(t.id) FILTER (WHERE t.status = 'done') AS tasks_done,
+            COUNT(t.id) FILTER (WHERE t.priority = 'high') AS high_priority
+        FROM tasks t
+        WHERE t.meeting_id IN (SELECT id FROM user_meetings)
     """)
     stats_row = (await db.execute(stats_sql, {"uid": uid})).one()
 

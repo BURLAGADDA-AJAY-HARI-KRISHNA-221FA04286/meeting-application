@@ -172,12 +172,25 @@ export default function TaskBoardPage() {
         { id: 'done', label: 'Done', emoji: '✅', color: '#10b981' },
     ];
 
-    const getColumnTasks = (colId) => filtered.filter(t => normalizeStatus(t.status) === colId);
+    // Single O(N) pass for column grouping
+    const tasksByColumn = useMemo(() => {
+        const groups = { 'todo': [], 'in-progress': [], 'done': [] };
+        for (const t of filtered) {
+            const status = normalizeStatus(t.status);
+            if (groups[status]) groups[status].push(t);
+        }
+        return groups;
+    }, [filtered]);
 
-    // Stats
-    const total = tasks.length;
-    const done = tasks.filter(t => t.status === 'done').length;
-    const progress = total ? Math.round(done / total * 100) : 0;
+    // Constant O(1) lookup
+    const getColumnTasks = (colId) => tasksByColumn[colId] || [];
+
+    // Stats - single O(N) pass
+    const { total, done, progress } = useMemo(() => {
+        const total = tasks.length;
+        const done = tasks.reduce((acc, t) => acc + (t.status === 'done' ? 1 : 0), 0);
+        return { total, done, progress: total ? Math.round((done / total) * 100) : 0 };
+    }, [tasks]);
 
     const priorityColor = (p) => {
         const pl = (p || '').toLowerCase();

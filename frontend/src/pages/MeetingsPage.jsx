@@ -54,11 +54,11 @@ export default function MeetingsPage() {
             result = result.filter(m => m.title.toLowerCase().includes(q));
         }
 
-        // Sort
+        // Sort - Lexicographical ISO string comparison is much faster than new Date() in O(N log N)
         if (sort === 'newest') {
-            result = [...result].sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+            result = [...result].sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''));
         } else if (sort === 'oldest') {
-            result = [...result].sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+            result = [...result].sort((a, b) => (a.created_at || '').localeCompare(b.created_at || ''));
         } else {
             result = [...result].sort((a, b) => (a.title || '').localeCompare(b.title || ''));
         }

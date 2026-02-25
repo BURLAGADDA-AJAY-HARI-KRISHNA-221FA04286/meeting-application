@@ -188,7 +188,10 @@ a:hover {
   transition: border-color var(--transition-base), box-shadow var(--transition-base);
   position: relative;
   overflow: hidden;
-  contain: content;
+  /* Instant Render Optimizations */
+  content-visibility: auto;
+  contain-intrinsic-size: 0 150px;
+  contain: layout style paint;
 }
 
 .card::before {
@@ -468,8 +471,11 @@ a:hover {
   transition: transform var(--transition-base), border-color var(--transition-base), box-shadow var(--transition-base);
   position: relative;
   overflow: hidden;
-  contain: content;
   will-change: transform;
+  /* Instant Render Optimizations */
+  content-visibility: auto;
+  contain-intrinsic-size: 0 120px;
+  contain: layout style paint;
 }
 
 .stat-card::after {
