@@ -10,7 +10,7 @@ import {
     Lightbulb, AlertCircle, FileDown
 } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { downloadTextFile, generateMeetingReport } from '../utils/download';
+
 import './MeetingDetail.css';
 
 const fadeUp = {
@@ -126,15 +126,13 @@ export default function MeetingDetailPage() {
             'END:VEVENT', 'END:VCALENDAR'
         ].join('\r\n');
 
-        downloadTextFile(icsContent, `${title.replace(/\s+/g, '_')}.ics`, 'text/calendar');
+        meetingsAPI.downloadClientFile(icsContent, `${title.replace(/\s+/g, '_')}.ics`, 'text/calendar');
         toast.success('Calendar file downloaded!');
     };
 
     const handleDownloadReport = () => {
-        const report = generateMeetingReport(meeting, analysis);
-        const filename = `${(meeting.title || 'meeting').replace(/\s+/g, '_')}_report_${new Date().toISOString().slice(0, 10)}.txt`;
-        downloadTextFile(report, filename, 'text/plain');
-        toast.success('Meeting report downloaded!');
+        meetingsAPI.downloadReport(id);
+        toast.success('Downloading report...');
     };
 
     const handleAddToCalendar = () => {

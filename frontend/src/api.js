@@ -93,6 +93,68 @@ export const meetingsAPI = {
             timeout: 300000, // 5 min timeout for large files
         });
     },
+    // Server-side file downloads — use window.open so the browser natively
+    // handles Content-Disposition + Content-Type headers (preserves filename).
+    // Token passed as query param since window.open can't set Auth headers.
+    downloadReport: (id) => {
+        const token = localStorage.getItem('access_token');
+        window.open(`${API_BASE}/meetings/${id}/download-report?token=${token}`, '_blank');
+    },
+    downloadTranscript: (id) => {
+        const token = localStorage.getItem('access_token');
+        window.open(`${API_BASE}/meetings/${id}/download-transcript?token=${token}`, '_blank');
+    },
+    /**
+     * Download client-side generated content (notes, ICS) via server
+     * to get proper Content-Disposition headers. Uses hidden form POST.
+     */
+    downloadClientFile: (content, filename, mimeType = 'text/plain') => {
+        // Create a hidden form that POSTs to the download-file endpoint
+        const form = document.createElement('form');
+        form.method = 'POST';
+        form.action = `${API_BASE}/meetings/download-file`;
+        form.target = '_blank';
+        form.style.display = 'none';
+
+        // Add fields
+        const fields = { content, filename, mime_type: mimeType };
+        // We send as JSON via a hidden input trick using fetch instead.
+        // Actually, forms can't send JSON natively, so let's use a fetch approach
+        // but open the response in a new tab via a Blob URL workaround.
+
+        // Best approach: use fetch with responseType blob, then create a proper download
+        const token = localStorage.getItem('access_token');
+        fetch(`${API_BASE}/meetings/download-file`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`,
+            },
+            body: JSON.stringify(fields),
+        })
+            .then(res => {
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                return res.blob();
+            })
+            .then(blob => {
+                // Create download with the filename from our request
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = filename;
+                a.style.position = 'fixed';
+                a.style.left = '-9999px';
+                document.body.appendChild(a);
+                requestAnimationFrame(() => {
+                    a.click();
+                    setTimeout(() => {
+                        document.body.removeChild(a);
+                        URL.revokeObjectURL(url);
+                    }, 5000);
+                });
+            })
+            .catch(err => console.error('Download failed:', err));
+    },
 };
 
 // ── AI ──

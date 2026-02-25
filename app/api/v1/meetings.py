@@ -5,11 +5,11 @@ import logging
 import os
 import tempfile
 import asyncio
-from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File, Form, status
+from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File, Form, status, Response, Request
 from sqlalchemy import func, select, desc
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_current_user
+from app.api.deps import get_current_user, get_current_user_or_token
 from app.db.session import get_db
 from app.models.meeting import Meeting
 from app.models.subtitle import Subtitle
@@ -559,3 +559,227 @@ async def upload_media(
             logger.error("Auto-analysis failed for meeting %d: %s", meeting.id, e)
 
     return await _enrich_meeting(db, meeting, include_analysis=True)
+
+
+# ── Server-Served File Downloads ──────────────────────────
+# These serve files via HTTP response with Content-Disposition headers
+# so browsers treat them as regular downloads (not blocked by SmartScreen).
+
+@router.get("/{meeting_id}/download-report")
+async def download_report(
+    meeting_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user_or_token),
+):
+    """Download a formatted meeting report as a .txt file."""
+    result = await db.execute(
+        select(Meeting).filter(Meeting.id == meeting_id, Meeting.user_id == current_user.id)
+    )
+    meeting = result.scalar_one_or_none()
+    if not meeting:
+        raise HTTPException(status_code=404, detail="Meeting not found")
+    transcript = await _reconstruct_transcript(db, meeting.id)
+
+    # Get analysis if it exists
+    ai_result = (await db.execute(
+        select(AIResult).where(AIResult.meeting_id == meeting.id).limit(1)
+    )).scalar_one_or_none()
+
+    lines = []
+    divider = "═" * 60
+
+    lines.append(divider)
+    lines.append(f"  MEETING REPORT: {meeting.title}")
+    lines.append(divider)
+    lines.append("")
+    lines.append(f"Date: {meeting.created_at}")
+    from datetime import datetime
+    lines.append(f"Report Generated: {datetime.now()}")
+    lines.append("")
+
+    if ai_result:
+        # Summary from summary_json
+        summary = ai_result.summary_json
+        if summary:
+            lines.append("─" * 40)
+            lines.append("📋 EXECUTIVE SUMMARY")
+            lines.append("─" * 40)
+            if isinstance(summary, str):
+                lines.append(summary)
+            elif isinstance(summary, dict):
+                text = summary.get("executive_summary") or summary.get("summary") or summary.get("text") or ""
+                if text:
+                    lines.append(text)
+                # Key points
+                key_points = summary.get("key_points") or summary.get("topics_discussed") or []
+                if key_points:
+                    lines.append("")
+                    lines.append("🔑 KEY POINTS:")
+                    for i, p in enumerate(key_points, 1):
+                        txt = p if isinstance(p, str) else (p.get("point") or p.get("text") or str(p))
+                        lines.append(f"  {i}. {txt}")
+                # Decisions from summary
+                decisions = summary.get("key_decisions") or summary.get("decisions") or []
+                if decisions:
+                    lines.append("")
+                    lines.append("✅ KEY DECISIONS:")
+                    for i, d in enumerate(decisions, 1):
+                        txt = d if isinstance(d, str) else (d.get("decision") or d.get("text") or str(d))
+                        lines.append(f"  {i}. {txt}")
+            lines.append("")
+
+        # Decisions from decisions_json
+        decisions_data = ai_result.decisions_json
+        if decisions_data:
+            decs = decisions_data if isinstance(decisions_data, list) else []
+            if isinstance(decisions_data, dict):
+                for v in decisions_data.values():
+                    if isinstance(v, list):
+                        decs = v
+                        break
+            if decs:
+                lines.append("─" * 40)
+                lines.append("📌 DECISIONS")
+                lines.append("─" * 40)
+                for i, d in enumerate(decs, 1):
+                    txt = d if isinstance(d, str) else (d.get("decision") or d.get("text") or str(d))
+                    lines.append(f"  {i}. {txt}")
+                lines.append("")
+
+        # Actions from actions_json
+        actions_data = ai_result.actions_json
+        if actions_data:
+            acts = actions_data if isinstance(actions_data, list) else []
+            if isinstance(actions_data, dict):
+                for v in actions_data.values():
+                    if isinstance(v, list):
+                        acts = v
+                        break
+            if acts:
+                lines.append("─" * 40)
+                lines.append("📝 ACTION ITEMS")
+                lines.append("─" * 40)
+                for i, a in enumerate(acts, 1):
+                    if isinstance(a, str):
+                        lines.append(f"  {i}. {a}")
+                    else:
+                        lines.append(f"  {i}. {a.get('action') or a.get('task') or a.get('text') or str(a)}")
+                        if a.get("assignee"):
+                            lines.append(f"     Assigned to: {a['assignee']}")
+                        if a.get("deadline") or a.get("due_date"):
+                            lines.append(f"     Deadline: {a.get('deadline') or a.get('due_date')}")
+                lines.append("")
+
+        # Risks from risks_json
+        risks_data = ai_result.risks_json
+        if risks_data:
+            rsks = risks_data if isinstance(risks_data, list) else []
+            if isinstance(risks_data, dict):
+                for v in risks_data.values():
+                    if isinstance(v, list):
+                        rsks = v
+                        break
+            if rsks:
+                lines.append("─" * 40)
+                lines.append("⚠️ RISKS & CONCERNS")
+                lines.append("─" * 40)
+                for i, r in enumerate(rsks, 1):
+                    txt = r if isinstance(r, str) else (r.get("risk") or r.get("text") or str(r))
+                    lines.append(f"  {i}. {txt}")
+                lines.append("")
+
+        # Sentiment from sentiment_json
+        sentiment = ai_result.sentiment_json
+        if sentiment:
+            lines.append("─" * 40)
+            lines.append("📊 SENTIMENT ANALYSIS")
+            lines.append("─" * 40)
+            if isinstance(sentiment, str):
+                lines.append(sentiment)
+            elif isinstance(sentiment, dict):
+                if sentiment.get("overall"):
+                    lines.append(f"  Overall: {sentiment['overall']}")
+                if sentiment.get("tone"):
+                    lines.append(f"  Tone: {sentiment['tone']}")
+            lines.append("")
+
+    # Transcript
+    if transcript:
+        lines.append("─" * 40)
+        lines.append("📄 TRANSCRIPT")
+        lines.append("─" * 40)
+        lines.append(transcript)
+        lines.append("")
+
+    lines.append(divider)
+    lines.append("  Generated by MeetingAI Intelligence Platform")
+    lines.append(divider)
+
+    content = "\n".join(lines)
+    safe_title = meeting.title.replace(" ", "_").replace("/", "_")[:50] if meeting.title else "meeting"
+    filename = f"{safe_title}_report.txt"
+
+    return Response(
+        content=content,
+        media_type="text/plain",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Cache-Control": "no-cache",
+        },
+    )
+
+
+@router.get("/{meeting_id}/download-transcript")
+async def download_transcript(
+    meeting_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user_or_token),
+):
+    """Download the raw transcript as a .txt file."""
+    result = await db.execute(
+        select(Meeting).filter(Meeting.id == meeting_id, Meeting.user_id == current_user.id)
+    )
+    meeting = result.scalar_one_or_none()
+    if not meeting:
+        raise HTTPException(status_code=404, detail="Meeting not found")
+    transcript = await _reconstruct_transcript(db, meeting.id)
+
+    if not transcript:
+        raise HTTPException(status_code=404, detail="No transcript available for this meeting")
+
+    safe_title = meeting.title.replace(" ", "_").replace("/", "_")[:50] if meeting.title else "meeting"
+    filename = f"{safe_title}_transcript.txt"
+
+    return Response(
+        content=transcript,
+        media_type="text/plain",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Cache-Control": "no-cache",
+        },
+    )
+
+
+@router.post("/download-file")
+async def download_file(
+    request: Request,
+    current_user: User = Depends(get_current_user),
+):
+    """Generic file download — accepts content via POST body and returns 
+    it as a downloadable file with proper Content-Disposition headers.
+    Used for client-side generated content (notes, ICS calendar files).
+    """
+
+    body = await request.json()
+    content = body.get("content", "")
+    filename = body.get("filename", "download.txt")
+    mime_type = body.get("mime_type", "text/plain")
+
+    return Response(
+        content=content,
+        media_type=mime_type,
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Cache-Control": "no-cache",
+        },
+    )

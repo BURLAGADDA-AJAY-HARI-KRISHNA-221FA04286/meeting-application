@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { videoMeetingAPI, createVideoMeetingWebSocket } from '../api';
+import { videoMeetingAPI, createVideoMeetingWebSocket, meetingsAPI } from '../api';
 import { useAuth } from '../context/AuthContext';
 import {
     Mic, MicOff, Video, VideoOff, PhoneOff, Monitor, MonitorOff,
@@ -11,7 +11,7 @@ import {
     VolumeX, Volume2, LockKeyhole, Unlock
 } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { downloadTextFile, downloadBlobFile, downloadCanvas } from '../utils/download';
+import { downloadBlobFile, downloadCanvas } from '../utils/download';
 import Chat from '../components/Chat';
 import Whiteboard from '../components/Whiteboard';
 import './VideoMeeting.css';
@@ -1462,7 +1462,7 @@ export default function VideoMeetingPage() {
                                         <button
                                             className="vm-notepad-copy"
                                             onClick={() => {
-                                                downloadTextFile(
+                                                meetingsAPI.downloadClientFile(
                                                     notepadText,
                                                     `meeting-notes-${new Date().toISOString().slice(0, 10)}.txt`,
                                                     'text/plain'
