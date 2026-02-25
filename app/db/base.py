@@ -6,3 +6,5 @@ from app.models.participant import Participant  # noqa
 from app.models.subtitle import Subtitle  # noqa
 from app.models.ai_result import AIResult  # noqa
 from app.models.chat_message import ChatMessage  # noqa
+from app.models.auth_token_blocklist import AuthTokenBlocklist  # noqa
+from app.models.password_reset_token import PasswordResetToken  # noqa

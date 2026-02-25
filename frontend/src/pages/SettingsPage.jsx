@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { authAPI, api } from '../api';
+import { authAPI, api, getRefreshToken } from '../api';
 
 import { motion } from 'framer-motion';
 import {
@@ -29,6 +29,12 @@ export default function SettingsPage() {
     const [showPw, setShowPw] = useState({});
     const [savingProfile, setSavingProfile] = useState(false);
     const [savingPw, setSavingPw] = useState(false);
+    const [githubToken, setGithubToken] = useState(() => sessionStorage.getItem('github_token') || localStorage.getItem('github_token') || '');
+    const [githubRepo, setGithubRepo] = useState(() => sessionStorage.getItem('github_repo') || localStorage.getItem('github_repo') || '');
+    const [jiraBaseUrl, setJiraBaseUrl] = useState(() => sessionStorage.getItem('jira_base_url') || localStorage.getItem('jira_base_url') || '');
+    const [jiraProjectKey, setJiraProjectKey] = useState(() => sessionStorage.getItem('jira_project_key') || localStorage.getItem('jira_project_key') || '');
+    const [jiraEmail, setJiraEmail] = useState(() => sessionStorage.getItem('jira_email') || localStorage.getItem('jira_email') || '');
+    const [jiraApiToken, setJiraApiToken] = useState(() => sessionStorage.getItem('jira_api_token') || localStorage.getItem('jira_api_token') || '');
 
     const handleProfileSave = async (e) => {
         e.preventDefault();
@@ -55,6 +61,7 @@ export default function SettingsPage() {
             await authAPI.changePassword({
                 current_password: passwords.current_password,
                 new_password: passwords.new_password,
+                refresh_token: getRefreshToken(),
             });
             toast.success('Password changed!');
             setPasswords({ current_password: '', new_password: '', confirm_password: '' });
@@ -132,7 +139,7 @@ export default function SettingsPage() {
                 </motion.div>
 
                 {/* ── Password ── */}
-                <motion.div className="card settings-card" {...fadeUp} transition={{ delay: 0.1 }}>
+                <motion.div className="card settings-card" {...fadeUp} transition={{ delay: 0.05 }}>
                     <h3><Lock size={18} /> Change Password</h3>
                     <p>Keep your account secure</p>
                     <form className="password-form" onSubmit={handlePasswordChange}>
@@ -179,7 +186,7 @@ export default function SettingsPage() {
                 </motion.div>
 
                 {/* ── Shortcuts ── */}
-                <motion.div className="card settings-card" {...fadeUp} transition={{ delay: 0.15 }}>
+                <motion.div className="card settings-card" {...fadeUp} transition={{ delay: 0.08 }}>
                     <h3><Keyboard size={18} /> Keyboard Shortcuts</h3>
                     <p>Navigate faster with keyboard shortcuts</p>
                     <div className="shortcuts-grid">
@@ -197,7 +204,7 @@ export default function SettingsPage() {
                 </motion.div>
 
                 {/* ── Integrations ── */}
-                <motion.div className="card settings-card" {...fadeUp} transition={{ delay: 0.2 }}>
+                <motion.div className="card settings-card" {...fadeUp} transition={{ delay: 0.1 }}>
                     <h3><Github size={18} /> Integrations</h3>
                     <p>Connect with external services</p>
                     <div className="input-group">
@@ -207,23 +214,24 @@ export default function SettingsPage() {
                             className="input"
                             type="password"
                             placeholder="ghp_xxxxxxxxxxxx"
-                            value={localStorage.getItem('github_token') || ''}
+                            value={githubToken}
                             onChange={(e) => {
-                                localStorage.setItem('github_token', e.target.value);
-                                // Force re-render not strictly needed if we read from LS on mount, but good for UX feedback
-                                window.location.reload();
+                                const value = e.target.value;
+                                setGithubToken(value);
+                                sessionStorage.setItem('github_token', value);
+                                localStorage.removeItem('github_token');
                             }}
                         />
                         <small style={{ color: 'var(--text-muted)', fontSize: '0.75rem', marginTop: 4 }}>
                             Required to export tasks as issues. Token is stored locally in your browser.
                         </small>
                     </div>
-                    {localStorage.getItem('github_token') && (
+                    {githubToken && (
                         <div style={{ marginBottom: 16 }}>
                             <button
                                 className="btn btn-sm btn-secondary"
                                 onClick={async () => {
-                                    const token = localStorage.getItem('github_token');
+                                    const token = githubToken;
                                     if (!token) return;
                                     const toastId = toast.loading('Verifying token...');
                                     try {
@@ -248,14 +256,82 @@ export default function SettingsPage() {
                             id="gh-repo"
                             className="input"
                             placeholder="username/repo-name"
-                            value={localStorage.getItem('github_repo') || ''}
-                            onChange={(e) => localStorage.setItem('github_repo', e.target.value)}
+                            value={githubRepo}
+                            onChange={(e) => {
+                                const value = e.target.value;
+                                setGithubRepo(value);
+                                sessionStorage.setItem('github_repo', value);
+                                localStorage.removeItem('github_repo');
+                            }}
+                        />
+                    </div>
+
+                    <div className="input-group" style={{ marginTop: 18 }}>
+                        <label className="input-label" htmlFor="jira-base-url">Jira Base URL (optional)</label>
+                        <input
+                            id="jira-base-url"
+                            className="input"
+                            placeholder="https://your-company.atlassian.net"
+                            value={jiraBaseUrl}
+                            onChange={(e) => {
+                                const value = e.target.value;
+                                setJiraBaseUrl(value);
+                                sessionStorage.setItem('jira_base_url', value);
+                                localStorage.removeItem('jira_base_url');
+                            }}
+                        />
+                    </div>
+                    <div className="input-group">
+                        <label className="input-label" htmlFor="jira-project-key">Jira Project Key</label>
+                        <input
+                            id="jira-project-key"
+                            className="input"
+                            placeholder="ENG"
+                            value={jiraProjectKey}
+                            onChange={(e) => {
+                                const value = e.target.value;
+                                setJiraProjectKey(value);
+                                sessionStorage.setItem('jira_project_key', value);
+                                localStorage.removeItem('jira_project_key');
+                            }}
+                        />
+                    </div>
+                    <div className="input-group">
+                        <label className="input-label" htmlFor="jira-email">Jira Email</label>
+                        <input
+                            id="jira-email"
+                            className="input"
+                            type="email"
+                            placeholder="name@company.com"
+                            value={jiraEmail}
+                            onChange={(e) => {
+                                const value = e.target.value;
+                                setJiraEmail(value);
+                                sessionStorage.setItem('jira_email', value);
+                                localStorage.removeItem('jira_email');
+                            }}
+                        />
+                    </div>
+                    <div className="input-group">
+                        <label className="input-label" htmlFor="jira-api-token">Jira API Token</label>
+                        <input
+                            id="jira-api-token"
+                            className="input"
+                            type="password"
+                            placeholder="Atlassian API token"
+                            value={jiraApiToken}
+                            onChange={(e) => {
+                                const value = e.target.value;
+                                setJiraApiToken(value);
+                                sessionStorage.setItem('jira_api_token', value);
+                                localStorage.removeItem('jira_api_token');
+                            }}
                         />
                     </div>
                 </motion.div>
 
                 {/* ── About ── */}
-                <motion.div className="card settings-card" {...fadeUp} transition={{ delay: 0.25 }}>
+                <motion.div className="card settings-card" {...fadeUp} transition={{ delay: 0.12 }}>
                     <h3><Info size={18} /> About MeetingAI</h3>
                     <p>Application information</p>
                     <div className="about-info">

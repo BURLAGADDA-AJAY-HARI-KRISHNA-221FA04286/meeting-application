@@ -1,6 +1,32 @@
 import axios from 'axios';
 
-const API_BASE = 'http://localhost:8000/api/v1';
+const RAW_API_BASE = import.meta.env.VITE_API_BASE?.trim();
+const API_BASE = RAW_API_BASE || `${window.location.protocol}//${window.location.hostname}:8000/api/v1`;
+
+const ACCESS_TOKEN_KEY = 'access_token';
+const REFRESH_TOKEN_KEY = 'refresh_token';
+
+export function getAccessToken() {
+    return sessionStorage.getItem(ACCESS_TOKEN_KEY) || localStorage.getItem(ACCESS_TOKEN_KEY);
+}
+
+export function getRefreshToken() {
+    return sessionStorage.getItem(REFRESH_TOKEN_KEY) || localStorage.getItem(REFRESH_TOKEN_KEY);
+}
+
+export function saveAuthTokens(accessToken, refreshToken) {
+    sessionStorage.setItem(ACCESS_TOKEN_KEY, accessToken);
+    sessionStorage.setItem(REFRESH_TOKEN_KEY, refreshToken);
+    localStorage.removeItem(ACCESS_TOKEN_KEY);
+    localStorage.removeItem(REFRESH_TOKEN_KEY);
+}
+
+export function clearAuthTokens() {
+    sessionStorage.removeItem(ACCESS_TOKEN_KEY);
+    sessionStorage.removeItem(REFRESH_TOKEN_KEY);
+    localStorage.removeItem(ACCESS_TOKEN_KEY);
+    localStorage.removeItem(REFRESH_TOKEN_KEY);
+}
 
 export const api = axios.create({
     baseURL: API_BASE,
@@ -9,7 +35,7 @@ export const api = axios.create({
 
 // Attach JWT token to every request
 api.interceptors.request.use((config) => {
-    const token = localStorage.getItem('access_token');
+    const token = getAccessToken();
     if (token) {
         config.headers.Authorization = `Bearer ${token}`;
     }
@@ -20,23 +46,25 @@ api.interceptors.request.use((config) => {
 api.interceptors.response.use(
     (res) => res,
     async (error) => {
-        const originalRequest = error.config;
-        if (error.response?.status === 401 && !originalRequest._retry) {
+        const originalRequest = error.config || {};
+        const requestUrl = originalRequest.url || '';
+        const isAuthEndpoint = requestUrl.includes('/login') || requestUrl.includes('/refresh');
+
+        if (error.response?.status === 401 && !originalRequest._retry && !isAuthEndpoint) {
             originalRequest._retry = true;
-            const refreshToken = localStorage.getItem('refresh_token');
+            const refreshToken = getRefreshToken();
             if (refreshToken) {
                 try {
                     const res = await axios.post(`${API_BASE}/refresh`, { refresh_token: refreshToken });
-                    localStorage.setItem('access_token', res.data.access_token);
-                    localStorage.setItem('refresh_token', res.data.refresh_token);
+                    saveAuthTokens(res.data.access_token, res.data.refresh_token);
                     originalRequest.headers.Authorization = `Bearer ${res.data.access_token}`;
                     return api(originalRequest);
                 } catch {
-                    localStorage.clear();
+                    clearAuthTokens();
                     window.location.href = '/login';
                 }
             } else {
-                localStorage.clear();
+                clearAuthTokens();
                 window.location.href = '/login';
             }
         }
@@ -44,16 +72,32 @@ api.interceptors.response.use(
     }
 );
 
-// ── Simple in-memory cache for GET requests ──
+// ── Stale-While-Revalidate cache for GET requests ──
 const _cache = new Map();
-const CACHE_TTL = 30_000; // 30 seconds
+const CACHE_TTL = 30_000; // 30s fresh window
 
+/**
+ * SWR cache: returns cached data instantly, refreshes in background if stale.
+ * Fresh (< TTL): return cache, no fetch.
+ * Stale (> TTL): return cache immediately + silent background refetch.
+ * Empty: fetch normally.
+ */
 function cachedGet(url, params, ttl = CACHE_TTL) {
     const key = url + (params ? JSON.stringify(params) : '');
     const cached = _cache.get(key);
-    if (cached && Date.now() - cached.time < ttl) {
+    const now = Date.now();
+
+    if (cached) {
+        if (now - cached.time < ttl) {
+            return Promise.resolve(cached.data);
+        }
+        // Stale: return old data now, refresh silently in background
+        api.get(url, params ? { params } : undefined)
+            .then(res => { _cache.set(key, { data: res, time: Date.now() }); })
+            .catch(() => { });
         return Promise.resolve(cached.data);
     }
+
     return api.get(url, params ? { params } : undefined).then(res => {
         _cache.set(key, { data: res, time: Date.now() });
         return res;
@@ -66,14 +110,71 @@ function invalidateCache(prefix) {
     }
 }
 
+function _sanitizeDownloadFilename(filename, fallbackName = 'download.txt') {
+    const base = (filename || '').trim();
+    const withoutControls = Array.from(base, (ch) => (ch.charCodeAt(0) < 32 ? '_' : ch)).join('');
+    const cleaned = withoutControls
+        .replace(/[<>:"/\\|?*]/g, '_')
+        .replace(/\s+/g, ' ')
+        .trim()
+        .replace(/^\.+/, '');
+    if (!cleaned) return fallbackName;
+    return cleaned.slice(0, 180);
+}
+
+function _extractFilenameFromContentDisposition(disposition) {
+    if (!disposition) return null;
+
+    // RFC 5987 form: filename*=UTF-8''encoded%20name.txt
+    const utfMatch = disposition.match(/filename\*\s*=\s*([^;]+)/i);
+    if (utfMatch) {
+        let value = utfMatch[1].trim().replace(/^"(.*)"$/, '$1');
+        value = value.replace(/^UTF-8''/i, '');
+        try {
+            return decodeURIComponent(value);
+        } catch {
+            return value;
+        }
+    }
+
+    // Basic form: filename="name.txt" or filename=name.txt
+    const basicMatch =
+        disposition.match(/filename\s*=\s*"([^"]+)"/i) ||
+        disposition.match(/filename\s*=\s*([^;\n]+)/i);
+    return basicMatch ? basicMatch[1].trim() : null;
+}
+
 // ── Auth ──
 export const authAPI = {
     register: (data) => api.post('/register', data),
     login: (data) => api.post('/login', data),
+    logout: (data) => api.post('/logout', data),
+    forgotPassword: (data) => api.post('/forgot-password', data),
+    resetPassword: (data) => api.post('/reset-password', data),
     getMe: () => api.get('/me'),
     updateProfile: (data) => api.patch('/me', data),
     changePassword: (data) => api.post('/me/change-password', data),
 };
+
+// ── Download helper: fetch → blob → saveAs (native Save-As dialog) ──
+async function _fetchAndSave(url, fallbackName) {
+    const { saveAs } = await import('./utils/download.js');
+    const token = getAccessToken();
+    try {
+        const res = await fetch(url, {
+            headers: { 'Authorization': `Bearer ${token}` },
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const disp = res.headers.get('Content-Disposition') || '';
+        const extracted = _extractFilenameFromContentDisposition(disp);
+        const filename = _sanitizeDownloadFilename(extracted, fallbackName);
+        const blob = await res.blob();
+        await saveAs(blob, filename);
+    } catch (err) {
+        console.error('Download failed:', err);
+        throw err;
+    }
+}
 
 // ── Meetings ──
 export const meetingsAPI = {
@@ -90,70 +191,23 @@ export const meetingsAPI = {
         formData.append('auto_analyze', autoAnalyze);
         return api.post('/meetings/upload-media', formData, {
             headers: { 'Content-Type': 'multipart/form-data' },
-            timeout: 300000, // 5 min timeout for large files
+            timeout: 300000,
         });
     },
-    // Server-side file downloads — use window.open so the browser natively
-    // handles Content-Disposition + Content-Type headers (preserves filename).
-    // Token passed as query param since window.open can't set Auth headers.
-    downloadReport: (id) => {
-        const token = localStorage.getItem('access_token');
-        window.open(`${API_BASE}/meetings/${id}/download-report?token=${token}`, '_blank');
-    },
-    downloadTranscript: (id) => {
-        const token = localStorage.getItem('access_token');
-        window.open(`${API_BASE}/meetings/${id}/download-transcript?token=${token}`, '_blank');
-    },
-    /**
-     * Download client-side generated content (notes, ICS) via server
-     * to get proper Content-Disposition headers. Uses hidden form POST.
-     */
-    downloadClientFile: (content, filename, mimeType = 'text/plain') => {
-        // Create a hidden form that POSTs to the download-file endpoint
-        const form = document.createElement('form');
-        form.method = 'POST';
-        form.action = `${API_BASE}/meetings/download-file`;
-        form.target = '_blank';
-        form.style.display = 'none';
-
-        // Add fields
-        const fields = { content, filename, mime_type: mimeType };
-        // We send as JSON via a hidden input trick using fetch instead.
-        // Actually, forms can't send JSON natively, so let's use a fetch approach
-        // but open the response in a new tab via a Blob URL workaround.
-
-        // Best approach: use fetch with responseType blob, then create a proper download
-        const token = localStorage.getItem('access_token');
-        fetch(`${API_BASE}/meetings/download-file`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${token}`,
-            },
-            body: JSON.stringify(fields),
-        })
-            .then(res => {
-                if (!res.ok) throw new Error(`HTTP ${res.status}`);
-                return res.blob();
-            })
-            .then(blob => {
-                // Create download with the filename from our request
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = filename;
-                a.style.position = 'fixed';
-                a.style.left = '-9999px';
-                document.body.appendChild(a);
-                requestAnimationFrame(() => {
-                    a.click();
-                    setTimeout(() => {
-                        document.body.removeChild(a);
-                        URL.revokeObjectURL(url);
-                    }, 5000);
-                });
-            })
-            .catch(err => console.error('Download failed:', err));
+    // ── File Downloads (uses native Save-As dialog) ──
+    downloadReport: (id) => _fetchAndSave(
+        `${API_BASE}/meetings/${id}/download-report`,
+        'meeting_report.txt'
+    ),
+    downloadTranscript: (id) => _fetchAndSave(
+        `${API_BASE}/meetings/${id}/download-transcript`,
+        'transcript.txt'
+    ),
+    // For client-side content (notes, ICS) — no server round-trip needed
+    downloadClientFile: async (content, filename, mimeType = 'text/plain') => {
+        const { saveAs } = await import('./utils/download.js');
+        const blob = new Blob([content], { type: mimeType });
+        await saveAs(blob, filename);
     },
 };
 
@@ -166,7 +220,7 @@ export const aiAPI = {
 
 // ── Tasks ──
 export const tasksAPI = {
-    list: () => api.get('/tasks'),
+    list: (params = {}) => api.get('/tasks', { params }),
     create: (data) => api.post('/tasks', data),
     generate: (meetingId) => api.post(`/meetings/${meetingId}/generate-tasks`),
     update: (taskId, data) => api.patch(`/tasks/${taskId}`, data),
@@ -179,11 +233,17 @@ export const githubAPI = {
         api.post(`/meetings/${meetingId}/export-github`, { repo, task_ids: taskIds, token }),
 };
 
+export const jiraAPI = {
+    exportTasks: (meetingId, payload) =>
+        api.post(`/meetings/${meetingId}/export-jira`, payload),
+};
+
 // ── WebSocket helper ──
 export function createMeetingWebSocket(meetingId) {
-    const token = localStorage.getItem('access_token');
-    const wsBase = API_BASE.replace('http', 'ws');
-    return new WebSocket(`${wsBase}/ws/meeting/${meetingId}?token=${token}`);
+    const token = getAccessToken();
+    if (!token) throw new Error('Authentication required for WebSocket connection');
+    const wsBase = API_BASE.replace('https://', 'wss://').replace('http://', 'ws://');
+    return new WebSocket(`${wsBase}/ws/meeting/${meetingId}`, ['bearer', token]);
 }
 
 // ── Video Meeting ──
@@ -194,10 +254,12 @@ export const videoMeetingAPI = {
     saveTranscript: (roomId, data) => api.post(`/video-meeting/${roomId}/save-transcript`, data),
 };
 
-export function createVideoMeetingWebSocket(roomId, userId, displayName) {
-    const wsBase = API_BASE.replace('http', 'ws');
-    const params = new URLSearchParams({ user_id: userId, display_name: displayName });
-    return new WebSocket(`${wsBase}/video-meeting/ws/${roomId}?${params}`);
+export function createVideoMeetingWebSocket(roomId, displayName) {
+    const token = getAccessToken();
+    if (!token) throw new Error('Authentication required for WebSocket connection');
+    const wsBase = API_BASE.replace('https://', 'wss://').replace('http://', 'ws://');
+    const params = new URLSearchParams({ display_name: displayName || 'User' });
+    return new WebSocket(`${wsBase}/video-meeting/ws/${roomId}?${params}`, ['bearer', token]);
 }
 
 export default api;

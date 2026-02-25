@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { meetingsAPI, aiAPI } from '../api';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -17,38 +17,74 @@ const fadeUp = {
 
 export default function MeetingsPage() {
     const navigate = useNavigate();
-    const [meetings, setMeetings] = useState([]);
+    // All meetings loaded once — filtering/search/sort is pure client-side
+    const [allMeetings, setAllMeetings] = useState([]);
     const [loading, setLoading] = useState(true);
     const [search, setSearch] = useState('');
     const [statusFilter, setStatusFilter] = useState('');
     const [sort, setSort] = useState('newest');
     const [viewMode, setViewMode] = useState('grid');
     const [analyzingIds, setAnalyzingIds] = useState(new Set());
+    const hasLoaded = useRef(false);
 
-    const fetchMeetings = useCallback(() => {
-        const params = {};
-        if (search) params.search = search;
-        if (statusFilter) params.status = statusFilter;
-        meetingsAPI.list(params)
-            .then(res => setMeetings(res.data))
+    // ── Load all meetings ONCE ──
+    useEffect(() => {
+        if (hasLoaded.current) return;
+        hasLoaded.current = true;
+        meetingsAPI.list()
+            .then(res => setAllMeetings(res.data))
             .catch(() => toast.error('Failed to load meetings'))
             .finally(() => setLoading(false));
-    }, [search, statusFilter]);
+    }, []);
 
-    useEffect(() => { fetchMeetings(); }, [fetchMeetings]);
+    // ── Client-side filter + search + sort (instant, zero network) ──
+    const filtered = useMemo(() => {
+        let result = allMeetings;
+
+        // Status filter
+        if (statusFilter === 'analyzed') {
+            result = result.filter(m => m.has_analysis);
+        } else if (statusFilter === 'pending') {
+            result = result.filter(m => !m.has_analysis);
+        }
+
+        // Search filter (case-insensitive title match)
+        if (search) {
+            const q = search.toLowerCase();
+            result = result.filter(m => m.title.toLowerCase().includes(q));
+        }
+
+        // Sort
+        if (sort === 'newest') {
+            result = [...result].sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+        } else if (sort === 'oldest') {
+            result = [...result].sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+        } else {
+            result = [...result].sort((a, b) => (a.title || '').localeCompare(b.title || ''));
+        }
+
+        return result;
+    }, [allMeetings, statusFilter, search, sort]);
+
+    // Stats from full dataset (not filtered)
+    const analyzed = useMemo(() => allMeetings.filter(m => m.has_analysis).length, [allMeetings]);
+    const pending = allMeetings.length - analyzed;
 
     // ── Delete with optimistic UI ──
     const handleDelete = async (e, id) => {
         e.stopPropagation();
         if (!confirm('Delete this meeting?')) return;
         // Optimistic: remove from UI immediately
-        setMeetings(prev => prev.filter(m => m.id !== id));
+        setAllMeetings(prev => prev.filter(m => m.id !== id));
         try {
             await meetingsAPI.delete(id);
             toast.success('Meeting deleted');
         } catch {
             toast.error('Failed to delete');
-            fetchMeetings(); // Revert on error
+            // Revert on error — re-fetch all
+            meetingsAPI.list()
+                .then(res => setAllMeetings(res.data))
+                .catch(() => { });
         }
     };
 
@@ -60,7 +96,7 @@ export default function MeetingsPage() {
             await aiAPI.analyze(id);
             toast.success('Analysis complete!');
             // Update local state to reflect analyzed status
-            setMeetings(prev => prev.map(m =>
+            setAllMeetings(prev => prev.map(m =>
                 m.id === id ? { ...m, has_analysis: true } : m
             ));
         } catch (err) {
@@ -70,15 +106,6 @@ export default function MeetingsPage() {
             setAnalyzingIds(prev => { const s = new Set(prev); s.delete(id); return s; });
         }
     };
-
-    const sorted = [...meetings].sort((a, b) => {
-        if (sort === 'newest') return new Date(b.created_at) - new Date(a.created_at);
-        if (sort === 'oldest') return new Date(a.created_at) - new Date(b.created_at);
-        return (a.title || '').localeCompare(b.title || '');
-    });
-
-    const analyzed = meetings.filter(m => m.has_analysis).length;
-    const pending = meetings.length - analyzed;
 
     if (loading) {
         return (
@@ -115,7 +142,7 @@ export default function MeetingsPage() {
                 <div>
                     <h1 className="page-title">Meetings</h1>
                     <p className="page-subtitle">
-                        {meetings.length} total  •  {analyzed} analyzed  •  {pending} pending
+                        {allMeetings.length} total  •  {analyzed} analyzed  •  {pending} pending
                     </p>
                 </div>
                 <motion.button
@@ -185,28 +212,35 @@ export default function MeetingsPage() {
             </motion.div>
 
             {/* ── Content ── */}
-            {sorted.length === 0 ? (
+            {filtered.length === 0 ? (
                 <motion.div className="card" {...fadeUp} transition={{ delay: 0.1 }}>
                     <div className="empty-state">
                         <Video size={48} className="empty-icon" />
                         <h3 className="empty-title">No meetings found</h3>
-                        <p className="empty-text">Create your first meeting to get started with AI analysis.</p>
-                        <button className="btn btn-primary" onClick={() => navigate('/meetings/new')}>
-                            <Plus size={16} /> Create Meeting
-                        </button>
+                        <p className="empty-text">
+                            {search || statusFilter
+                                ? 'Try adjusting your search or filter.'
+                                : 'Create your first meeting to get started with AI analysis.'}
+                        </p>
+                        {!search && !statusFilter && (
+                            <button className="btn btn-primary" onClick={() => navigate('/meetings/new')}>
+                                <Plus size={16} /> Create Meeting
+                            </button>
+                        )}
                     </div>
                 </motion.div>
             ) : viewMode === 'grid' ? (
                 <div className="meetings-grid">
-                    <AnimatePresence>
-                        {sorted.map((m, i) => (
+                    <AnimatePresence mode="popLayout">
+                        {filtered.map((m, i) => (
                             <motion.div
                                 key={m.id}
                                 className="card meeting-card"
                                 onClick={() => navigate(`/meetings/${m.id}`)}
-                                {...fadeUp}
-                                transition={{ delay: 0.05 + i * 0.03 }}
-                                layout
+                                initial={{ opacity: 0, y: 10 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                exit={{ opacity: 0, scale: 0.95 }}
+                                transition={{ duration: 0.15, delay: Math.min(i * 0.02, 0.2) }}
                                 whileHover={{ y: -4 }}
                             >
                                 <div className="mc-header">
@@ -262,15 +296,16 @@ export default function MeetingsPage() {
                 </div>
             ) : (
                 <div className="meetings-list-view">
-                    <AnimatePresence>
-                        {sorted.map((m, i) => (
+                    <AnimatePresence mode="popLayout">
+                        {filtered.map((m, i) => (
                             <motion.div
                                 key={m.id}
                                 className="meeting-list-item"
                                 onClick={() => navigate(`/meetings/${m.id}`)}
-                                {...fadeUp}
-                                transition={{ delay: 0.02 + i * 0.02 }}
-                                layout
+                                initial={{ opacity: 0, x: -6 }}
+                                animate={{ opacity: 1, x: 0 }}
+                                exit={{ opacity: 0, x: 6 }}
+                                transition={{ duration: 0.12, delay: Math.min(i * 0.015, 0.15) }}
                                 whileHover={{ x: 3 }}
                             >
                                 <div className="mli-icon">

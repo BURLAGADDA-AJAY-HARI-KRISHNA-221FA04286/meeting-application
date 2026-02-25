@@ -1,0 +1,112 @@
+
+> frontend@0.0.0 dev
+> vite --host --port 5173
+
+
+  [32m[1mVITE[22m v7.3.1[39m  [2mready in [0m[1m857[22m[2m[0m ms[22m
+
+  [32m➜[39m  [1mLocal[22m:   [36mhttp://localhost:[1m5173[22m/[39m
+  [32m➜[39m  [1mNetwork[22m: [36mhttp://192.168.177.1:[1m5173[22m/[39m
+  [32m➜[39m  [1mNetwork[22m: [36mhttp://192.168.60.1:[1m5173[22m/[39m
+  [32m➜[39m  [1mNetwork[22m: [36mhttp://10.247.202.11:[1m5173[22m/[39m
+  [32m➜[39m  [1mNetwork[22m: [36mhttp://172.16.0.1:[1m5173[22m/[39m
+[2m[32m  ➜[39m[22m[2m  press [22m[1mh + enter[22m[2m to show help[22m
+[2m6:53:23 pm[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/@fs/C:/Users/ajayb/OneDrive/Desktop/meeting app/frontend/src/index.css[22m
+[2m6:53:23 pm[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/@fs/C:/Users/ajayb/OneDrive/Desktop/meeting app/frontend/src/pages/LiveMeetingPage.jsx[22m
+[2m6:54:04 pm[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/@fs/C:/Users/ajayb/OneDrive/Desktop/meeting app/frontend/src/index.css[22m
+[2m6:54:04 pm[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/@fs/C:/Users/ajayb/OneDrive/Desktop/meeting app/frontend/src/pages/LiveMeetingPage.jsx[22m
+[2m6:54:12 pm[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/@fs/C:/Users/ajayb/OneDrive/Desktop/meeting app/frontend/src/index.css[22m
+[2m6:54:12 pm[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/@fs/C:/Users/ajayb/OneDrive/Desktop/meeting app/frontend/src/pages/LiveMeetingPage.jsx[22m
+[2m6:54:17 pm[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/@fs/C:/Users/ajayb/OneDrive/Desktop/meeting app/frontend/src/index.css[22m
+[2m6:54:17 pm[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/@fs/C:/Users/ajayb/OneDrive/Desktop/meeting app/frontend/src/pages/LiveMeetingPage.jsx[22m
+[2m6:55:51 pm[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/@fs/C:/Users/ajayb/OneDrive/Desktop/meeting app/frontend/src/index.css[22m
+[2m6:55:51 pm[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/@fs/C:/Users/ajayb/OneDrive/Desktop/meeting app/frontend/src/pages/LiveMeetingPage.jsx[22m
+[2m6:55:51 pm[22m [31m[1m[vite][22m[39m [31mInternal server error: C:\Users\ajayb\OneDrive\Desktop\meeting app\frontend\src\pages\LiveMeetingPage.jsx: Unexpected character '�'. (967:30)
+
+[0m [90m 965 |[31m                     {[90m/* Quick Reactions */[31m}
+ [90m 966 |[31m                     [33m<[31m[33mdiv[31m style[33m=[31m{{ display[33m:[31m [32m'flex'[31m[33m,[31m gap[33m:[31m [35m4[31m }}[33m>[31m
+[31m[1m>[22m[31m[90m 967 |[31m                         {[[32m'�Y'[31m�[32m', '[31m�YZ[33m?[31m[32m', '[31m❤️[32m', '[31m�Y[33m~[31m[33m,[31m[32m'].map(emoji => ([31m
+ [90m     |[31m                               [31m[1m^[22m[31m
+ [90m 968 |[31m                             [33m<[31m[33mbutton[31m key[33m=[31m{emoji} className[33m=[31m[32m"btn btn-ghost btn-sm"[31m onClick[33m=[31m{() [33m=>[31m sendReaction(emoji)}
+ [90m 969 |[31m                                 style[33m=[31m{{ fontSize[33m:[31m [32m'1.1rem'[31m[33m,[31m padding[33m:[31m [32m'4px 6px'[31m }}[33m>[31m{emoji}[33m<[31m[33m/[31m[33mbutton[31m[33m>[31m
+ [90m 970 |[31m                         ))}[0m[39m
+  Plugin: [35mvite:react-babel[39m
+  File: [36mC:/Users/ajayb/OneDrive/Desktop/meeting app/frontend/src/pages/LiveMeetingPage.jsx[39m:967:30
+[33m  977 |                              <Grid size={16} /> <span style={{ marginLeft: 4 }}>Tools</span>
+  978 |                          </button>
+  979 |                          {showToolsMenu && (
+      |                          ^
+  980 |                              <div className="tool-menu">
+  981 |                                  <div className="menu-section-title">ESSENTIALS</div>[39m
+      at constructor (c:\Users\ajayb\OneDrive\Desktop\meeting app\frontend\node_modules\@babel\parser\lib\index.js:365:19)
+      at JSXParserMixin.raise (c:\Users\ajayb\OneDrive\Desktop\meeting app\frontend\node_modules\@babel\parser\lib\index.js:6599:19)
+      at JSXParserMixin.getTokenFromCode (c:\Users\ajayb\OneDrive\Desktop\meeting app\frontend\node_modules\@babel\parser\lib\index.js:6306:16)
+      at JSXParserMixin.getTokenFromCode (c:\Users\ajayb\OneDrive\Desktop\meeting app\frontend\node_modules\@babel\parser\lib\index.js:4797:11)
+      at JSXParserMixin.nextToken (c:\Users\ajayb\OneDrive\Desktop\meeting app\frontend\node_modules\@babel\parser\lib\index.js:5782:10)
+      at JSXParserMixin.next (c:\Users\ajayb\OneDrive\Desktop\meeting app\frontend\node_modules\@babel\parser\lib\index.js:5692:10)
+      at JSXParserMixin.parseLiteralAtNode (c:\Users\ajayb\OneDrive\Desktop\meeting app\frontend\node_modules\@babel\parser\lib\index.js:11604:10)
+      at JSXParserMixin.parseLiteral (c:\Users\ajayb\OneDrive\Desktop\meeting app\frontend\node_modules\@babel\parser\lib\index.js:11609:17)
+      at JSXParserMixin.parseStringLiteral (c:\Users\ajayb\OneDrive\Desktop\meeting app\frontend\node_modules\@babel\parser\lib\index.js:11612:17)
+      at JSXParserMixin.parseExprAtom (c:\Users\ajayb\OneDrive\Desktop\meeting app\frontend\node_modules\@babel\parser\lib\index.js:11321:21)
+      at JSXParserMixin.parseExprAtom (c:\Users\ajayb\OneDrive\Desktop\meeting app\frontend\node_modules\@babel\parser\lib\index.js:4764:20)
+      at JSXParserMixin.parseExprSubscripts (c:\Users\ajayb\OneDrive\Desktop\meeting app\frontend\node_modules\@babel\parser\lib\index.js:11081:23)
+      at JSXParserMixin.parseUpdate (c:\Users\ajayb\OneDrive\Desktop\meeting app\frontend\node_modules\@babel\parser\lib\index.js:11066:21)
+      at JSXParserMixin.parseMaybeUnary (c:\Users\ajayb\OneDrive\Desktop\meeting app\frontend\node_modules\@babel\parser\lib\index.js:11046:23)
+      at JSXParserMixin.parseMaybeUnaryOrPrivate (c:\Users\ajayb\OneDrive\Desktop\meeting app\frontend\node_modules\@babel\parser\lib\index.js:10899:61)
+      at JSXParserMixin.parseExprOps (c:\Users\ajayb\OneDrive\Desktop\meeting app\frontend\node_modules\@babel\parser\lib\index.js:10904:23)
+      at JSXParserMixin.parseMaybeConditional (c:\Users\ajayb\OneDrive\Desktop\meeting app\frontend\node_modules\@babel\parser\lib\index.js:10881:23)
+      at JSXParserMixin.parseMaybeAssign (c:\Users\ajayb\OneDrive\Desktop\meeting app\frontend\node_modules\@babel\parser\lib\index.js:10831:21)
+      at c:\Users\ajayb\OneDrive\Desktop\meeting app\frontend\node_modules\@babel\parser\lib\index.js:10800:39
+      at JSXParserMixin.allowInAnd (c:\Users\ajayb\OneDrive\Desktop\meeting app\frontend\node_modules\@babel\parser\lib\index.js:12426:12)
+      at JSXParserMixin.parseMaybeAssignAllowIn (c:\Users\ajayb\OneDrive\Desktop\meeting app\frontend\node_modules\@babel\parser\lib\index.js:10800:17)
+      at JSXParserMixin.parseMaybeAssignAllowInOrVoidPattern (c:\Users\ajayb\OneDrive\Desktop\meeting app\frontend\node_modules\@babel\parser\lib\index.js:12493:17)
+      at JSXParserMixin.parseExprListItem (c:\Users\ajayb\OneDrive\Desktop\meeting app\frontend\node_modules\@babel\parser\lib\index.js:12175:18)
+      at JSXParserMixin.parseExprList (c:\Users\ajayb\OneDrive\Desktop\meeting app\frontend\node_modules\@babel\parser\lib\index.js:12150:22)
+      at JSXParserMixin.parseArrayLike (c:\Users\ajayb\OneDrive\Desktop\meeting app\frontend\node_modules\@babel\parser\lib\index.js:12057:26)
+      at JSXParserMixin.parseExprAtom (c:\Users\ajayb\OneDrive\Desktop\meeting app\frontend\node_modules\@babel\parser\lib\index.js:11335:23)
+      at JSXParserMixin.parseExprAtom (c:\Users\ajayb\OneDrive\Desktop\meeting app\frontend\node_modules\@babel\parser\lib\index.js:4764:20)
+      at JSXParserMixin.parseExprSubscripts (c:\Users\ajayb\OneDrive\Desktop\meeting app\frontend\node_modules\@babel\parser\lib\index.js:11081:23)
+      at JSXParserMixin.parseUpdate (c:\Users\ajayb\OneDrive\Desktop\meeting app\frontend\node_modules\@babel\parser\lib\index.js:11066:21)
+      at JSXParserMixin.parseMaybeUnary (c:\Users\ajayb\OneDrive\Desktop\meeting app\frontend\node_modules\@babel\parser\lib\index.js:11046:23)
+      at JSXParserMixin.parseMaybeUnaryOrPrivate (c:\Users\ajayb\OneDrive\Desktop\meeting app\frontend\node_modules\@babel\parser\lib\index.js:10899:61)
+      at JSXParserMixin.parseExprOps (c:\Users\ajayb\OneDrive\Desktop\meeting app\frontend\node_modules\@babel\parser\lib\index.js:10904:23)
+      at JSXParserMixin.parseMaybeConditional (c:\Users\ajayb\OneDrive\Desktop\meeting app\frontend\node_modules\@babel\parser\lib\index.js:10881:23)
+      at JSXParserMixin.parseMaybeAssign (c:\Users\ajayb\OneDrive\Desktop\meeting app\frontend\node_modules\@babel\parser\lib\index.js:10831:21)
+      at JSXParserMixin.parseExpressionBase (c:\Users\ajayb\OneDrive\Desktop\meeting app\frontend\node_modules\@babel\parser\lib\index.js:10784:23)
+      at c:\Users\ajayb\OneDrive\Desktop\meeting app\frontend\node_modules\@babel\parser\lib\index.js:10780:39
+      at JSXParserMixin.allowInAnd (c:\Users\ajayb\OneDrive\Desktop\meeting app\frontend\node_modules\@babel\parser\lib\index.js:12426:12)
+      at JSXParserMixin.parseExpression (c:\Users\ajayb\OneDrive\Desktop\meeting app\frontend\node_modules\@babel\parser\lib\index.js:10780:17)
+      at JSXParserMixin.jsxParseExpressionContainer (c:\Users\ajayb\OneDrive\Desktop\meeting app\frontend\node_modules\@babel\parser\lib\index.js:4632:31)
+      at JSXParserMixin.jsxParseElementAt (c:\Users\ajayb\OneDrive\Desktop\meeting app\frontend\node_modules\@babel\parser\lib\index.js:4711:36)
+      at JSXParserMixin.jsxParseElementAt (c:\Users\ajayb\OneDrive\Desktop\meeting app\frontend\node_modules\@babel\parser\lib\index.js:4698:32)
+      at JSXParserMixin.jsxParseElementAt (c:\Users\ajayb\OneDrive\Desktop\meeting app\frontend\node_modules\@babel\parser\lib\index.js:4698:32)
+      at JSXParserMixin.jsxParseElementAt (c:\Users\ajayb\OneDrive\Desktop\meeting app\frontend\node_modules\@babel\parser\lib\index.js:4698:32)
+      at JSXParserMixin.jsxParseElement (c:\Users\ajayb\OneDrive\Desktop\meeting app\frontend\node_modules\@babel\parser\lib\index.js:4749:17)
+      at JSXParserMixin.parseExprAtom (c:\Users\ajayb\OneDrive\Desktop\meeting app\frontend\node_modules\@babel\parser\lib\index.js:4759:19)
+      at JSXParserMixin.parseExprSubscripts (c:\Users\ajayb\OneDrive\Desktop\meeting app\frontend\node_modules\@babel\parser\lib\index.js:11081:23)
+      at JSXParserMixin.parseUpdate (c:\Users\ajayb\OneDrive\Desktop\meeting app\frontend\node_modules\@babel\parser\lib\index.js:11066:21)
+      at JSXParserMixin.parseMaybeUnary (c:\Users\ajayb\OneDrive\Desktop\meeting app\frontend\node_modules\@babel\parser\lib\index.js:11046:23)
+      at JSXParserMixin.parseMaybeUnaryOrPrivate (c:\Users\ajayb\OneDrive\Desktop\meeting app\frontend\node_modules\@babel\parser\lib\index.js:10899:61)
+      at JSXParserMixin.parseExprOps (c:\Users\ajayb\OneDrive\Desktop\meeting app\frontend\node_modules\@babel\parser\lib\index.js:10904:23)
+[2m6:56:43 pm[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/@fs/C:/Users/ajayb/OneDrive/Desktop/meeting app/frontend/src/index.css[22m
+[2m6:56:43 pm[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/@fs/C:/Users/ajayb/OneDrive/Desktop/meeting app/frontend/src/pages/LiveMeetingPage.jsx[22m
+[2m7:09:44 pm[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/@fs/C:/Users/ajayb/OneDrive/Desktop/meeting app/frontend/src/index.css[22m
+[2m7:09:44 pm[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/@fs/C:/Users/ajayb/OneDrive/Desktop/meeting app/frontend/src/pages/DashboardPage.jsx[22m
+[2m7:09:55 pm[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/@fs/C:/Users/ajayb/OneDrive/Desktop/meeting app/frontend/src/index.css[22m
+[2m7:09:55 pm[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/@fs/C:/Users/ajayb/OneDrive/Desktop/meeting app/frontend/src/pages/TaskBoardPage.jsx[22m
+[2m7:49:59 pm[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/@fs/C:/Users/ajayb/OneDrive/Desktop/meeting app/frontend/src/index.css[22m
+[2m7:49:59 pm[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/@fs/C:/Users/ajayb/OneDrive/Desktop/meeting app/frontend/src/pages/MeetingsPage.jsx[22m
+[2m7:50:25 pm[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/@fs/C:/Users/ajayb/OneDrive/Desktop/meeting app/frontend/src/index.css[22m
+[2m7:50:25 pm[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/@fs/C:/Users/ajayb/OneDrive/Desktop/meeting app/frontend/src/pages/DashboardPage.jsx[22m
+[2m7:52:38 pm[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/@fs/C:/Users/ajayb/OneDrive/Desktop/meeting app/frontend/src/index.css[22m
+[2m7:52:38 pm[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/@fs/C:/Users/ajayb/OneDrive/Desktop/meeting app/frontend/src/pages/TaskBoardPage.jsx[22m
+[2m7:59:36 pm[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/@fs/C:/Users/ajayb/OneDrive/Desktop/meeting app/frontend/src/context/AuthContext.jsx[22m
+[2m7:59:36 pm[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/@fs/C:/Users/ajayb/OneDrive/Desktop/meeting app/frontend/src/index.css[22m
+[2m8:00:20 pm[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/src/App.jsx[22m
+[2m8:00:20 pm[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/@fs/C:/Users/ajayb/OneDrive/Desktop/meeting app/frontend/src/index.css[22m
+[2m8:02:32 pm[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/@fs/C:/Users/ajayb/OneDrive/Desktop/meeting app/frontend/src/index.css[22m
+[2m8:02:32 pm[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/@fs/C:/Users/ajayb/OneDrive/Desktop/meeting app/frontend/src/context/AuthContext.jsx, /@fs/C:/Users/ajayb/OneDrive/Desktop/meeting app/frontend/src/pages/MeetingsPage.jsx, /@fs/C:/Users/ajayb/OneDrive/Desktop/meeting app/frontend/src/pages/DashboardPage.jsx, /@fs/C:/Users/ajayb/OneDrive/Desktop/meeting app/frontend/src/pages/TaskBoardPage.jsx, /@fs/C:/Users/ajayb/OneDrive/Desktop/meeting app/frontend/src/pages/NewMeetingPage.jsx, /@fs/C:/Users/ajayb/OneDrive/Desktop/meeting app/frontend/src/pages/SettingsPage.jsx, /@fs/C:/Users/ajayb/OneDrive/Desktop/meeting app/frontend/src/pages/MeetingDetailPage.jsx, /@fs/C:/Users/ajayb/OneDrive/Desktop/meeting app/frontend/src/pages/LiveMeetingPage.jsx, /@fs/C:/Users/ajayb/OneDrive/Desktop/meeting app/frontend/src/pages/VideoMeetingPage.jsx[22m
+[2m8:03:03 pm[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/@fs/C:/Users/ajayb/OneDrive/Desktop/meeting app/frontend/src/index.css[22m
+[2m8:03:03 pm[22m [36m[1m[vite][22m[39m [90m[2m(client)[22m[39m [32mhmr update [39m[2m/@fs/C:/Users/ajayb/OneDrive/Desktop/meeting app/frontend/src/pages/SettingsPage.jsx[22m
+[2m8:03:19 pm[22m [36m[1m[vite][22m[39m [32mvite.config.js changed, restarting server...[39m
+[2m8:03:20 pm[22m [36m[1m[vite][22m[39m server restarted.

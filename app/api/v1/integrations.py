@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException
-import requests
+import httpx
 from pydantic import BaseModel
 from typing import Optional
 
@@ -26,7 +26,8 @@ async def test_github_token(
             "Accept": "application/vnd.github.v3+json",
         }
         # Call GitHub API user endpoint to verify token
-        response = requests.get("https://api.github.com/user", headers=headers, timeout=5)
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            response = await client.get("https://api.github.com/user", headers=headers)
         
         if response.status_code == 200:
             user_data = response.json()

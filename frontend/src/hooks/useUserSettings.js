@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { PRODUCTIVITY_SETTINGS } from '../pages/SettingsConfig';
 
 export function useUserSettings() {

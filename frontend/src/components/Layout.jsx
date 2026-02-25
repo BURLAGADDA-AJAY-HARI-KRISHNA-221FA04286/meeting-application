@@ -4,9 +4,9 @@ import { useAuth } from '../context/AuthContext';
 import {
     Brain, LayoutDashboard, Video, SquareCheck, Settings,
     LogOut, Search, ChevronLeft, ChevronRight, Plus, Menu,
-    X, Command, Clock
+    Command
 } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { AnimatePresence } from 'framer-motion';
 import './Layout.css';
 
 export default function Layout() {
@@ -26,16 +26,47 @@ export default function Layout() {
         return () => clearInterval(interval);
     }, []);
 
-    useEffect(() => { setMobileOpen(false); }, [location]);
+    const navigateAndClose = useCallback((to) => {
+        if (mobileOpen) setMobileOpen(false);
+        navigate(to);
+    }, [mobileOpen, navigate]);
 
     const handleKeyDown = useCallback((e) => {
-        if ((e.ctrlKey || e.metaKey) && e.key === 'k') { e.preventDefault(); setShowPalette(true); }
-        if ((e.ctrlKey || e.metaKey) && e.key === 'n') { e.preventDefault(); navigate('/meetings/new'); }
-        if (e.altKey && e.key === '1') { e.preventDefault(); navigate('/dashboard'); }
-        if (e.altKey && e.key === '2') { e.preventDefault(); navigate('/meetings'); }
-        if (e.altKey && e.key === '3') { e.preventDefault(); navigate('/tasks'); }
-        if (e.altKey && e.key === '4') { e.preventDefault(); navigate('/settings'); }
-        if (e.altKey && e.key === '5') { e.preventDefault(); navigate('/meetings/new'); }
+        if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
+            e.preventDefault();
+            setShowPalette(true);
+            return;
+        }
+        if ((e.ctrlKey || e.metaKey) && e.key === 'n') {
+            e.preventDefault();
+            navigate('/meetings/new');
+            return;
+        }
+        if (e.altKey && e.key === '1') {
+            e.preventDefault();
+            navigate('/dashboard');
+            return;
+        }
+        if (e.altKey && e.key === '2') {
+            e.preventDefault();
+            navigate('/meetings');
+            return;
+        }
+        if (e.altKey && e.key === '3') {
+            e.preventDefault();
+            navigate('/tasks');
+            return;
+        }
+        if (e.altKey && e.key === '4') {
+            e.preventDefault();
+            navigate('/settings');
+            return;
+        }
+        if (e.altKey && e.key === '5') {
+            e.preventDefault();
+            navigate('/meetings/new');
+            return;
+        }
         if (e.key === 'Escape') setShowPalette(false);
     }, [navigate]);
 
@@ -51,12 +82,20 @@ export default function Layout() {
         { to: '/settings', icon: Settings, label: 'Settings', shortcut: '4' },
     ];
 
+    const prefetchByPath = {
+        '/dashboard': () => import('../pages/DashboardPage'),
+        '/meetings': () => import('../pages/MeetingsPage'),
+        '/tasks': () => import('../pages/TaskBoardPage'),
+        '/settings': () => import('../pages/SettingsPage'),
+        '/meetings/new': () => import('../pages/NewMeetingPage'),
+    };
+
     const commands = [
-        { label: 'Go to Dashboard', action: () => navigate('/dashboard') },
-        { label: 'Go to Meetings', action: () => navigate('/meetings') },
-        { label: 'Go to Tasks', action: () => navigate('/tasks') },
-        { label: 'Go to Settings', action: () => navigate('/settings') },
-        { label: 'New Meeting (Start / Join / Upload)', action: () => navigate('/meetings/new') },
+        { label: 'Go to Dashboard', action: () => navigateAndClose('/dashboard') },
+        { label: 'Go to Meetings', action: () => navigateAndClose('/meetings') },
+        { label: 'Go to Tasks', action: () => navigateAndClose('/tasks') },
+        { label: 'Go to Settings', action: () => navigateAndClose('/settings') },
+        { label: 'New Meeting (Start / Join / Upload)', action: () => navigateAndClose('/meetings/new') },
     ];
 
     const filteredCommands = searchQuery
@@ -65,9 +104,9 @@ export default function Layout() {
 
     const greeting = () => {
         const h = new Date().getHours();
-        if (h < 12) return '☀️';
-        if (h < 18) return '🌤️';
-        return '🌙';
+        if (h < 12) return 'Morning';
+        if (h < 18) return 'Afternoon';
+        return 'Evening';
     };
 
     const getPageTitle = () => {
@@ -83,19 +122,15 @@ export default function Layout() {
 
     return (
         <div className="layout">
-            {/* Mobile menu button */}
             <button className="mobile-menu-btn" onClick={() => setMobileOpen(true)}>
                 <Menu size={20} />
             </button>
 
-            {/* Mobile overlay */}
             {mobileOpen && (
                 <div className="sidebar-overlay" onClick={() => setMobileOpen(false)} />
             )}
 
-            {/* ── Sidebar ── */}
             <aside className={`sidebar ${collapsed ? 'collapsed' : ''} ${mobileOpen ? 'mobile-open' : ''}`}>
-                {/* Header */}
                 <div className="sidebar-header">
                     <div className="logo-container">
                         <div className="logo-icon">
@@ -117,24 +152,22 @@ export default function Layout() {
                     </button>
                 </div>
 
-                {/* Quick action */}
                 {collapsed ? (
                     <button
                         className="sidebar-quick-action-mini"
-                        onClick={() => navigate('/meetings/new')}
+                        onClick={() => navigateAndClose('/meetings/new')}
                         title="New Meeting"
                     >
                         <Plus size={18} />
                     </button>
                 ) : (
-                    <button className="sidebar-quick-action" onClick={() => navigate('/meetings/new')}>
+                    <button className="sidebar-quick-action" onClick={() => navigateAndClose('/meetings/new')}>
                         <Plus size={18} />
                         <span>New Meeting</span>
-                        <span className="shortcut-key">⌘N</span>
+                        <span className="shortcut-key">Ctrl+N</span>
                     </button>
                 )}
 
-                {/* Nav */}
                 <nav className="sidebar-nav">
                     {!collapsed && <div className="nav-section-label">Navigation</div>}
                     {navItems.map(item => (
@@ -143,6 +176,9 @@ export default function Layout() {
                             to={item.to}
                             className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}
                             title={collapsed ? item.label : undefined}
+                            onMouseEnter={() => prefetchByPath[item.to]?.()}
+                            onFocus={() => prefetchByPath[item.to]?.()}
+                            onClick={() => mobileOpen && setMobileOpen(false)}
                         >
                             <item.icon size={18} />
                             {!collapsed && (
@@ -155,7 +191,6 @@ export default function Layout() {
                     ))}
                 </nav>
 
-                {/* Status */}
                 {!collapsed && (
                     <div className="sidebar-status">
                         <div className="status-indicator">
@@ -166,9 +201,8 @@ export default function Layout() {
                     </div>
                 )}
 
-                {/* Footer */}
                 <div className="sidebar-footer">
-                    <div className="user-info" onClick={() => navigate('/settings')}>
+                    <div className="user-info" onClick={() => navigateAndClose('/settings')}>
                         <div className="user-avatar">
                             {(user?.full_name || 'U')[0].toUpperCase()}
                         </div>
@@ -189,21 +223,19 @@ export default function Layout() {
                 </div>
             </aside>
 
-            {/* ── Main ── */}
             <main className="main-content">
-                {/* Top bar */}
                 <div className="topbar">
                     <div className="topbar-left">
                         <div className="topbar-breadcrumb">
-                            <span className="topbar-greeting">{greeting()}</span>
+                            <span className="topbar-greeting">Good {greeting()}</span>
                             <span className="topbar-page">{getPageTitle()}</span>
                         </div>
                     </div>
                     <div className="topbar-right">
                         <button className="topbar-search-btn" onClick={() => setShowPalette(true)}>
                             <Search size={14} />
-                            <span>Search…</span>
-                            <span className="shortcut-key">⌘K</span>
+                            <span>Search...</span>
+                            <span className="shortcut-key">Ctrl+K</span>
                         </button>
                         <div className="topbar-time">{time}</div>
                     </div>
@@ -212,28 +244,21 @@ export default function Layout() {
                 <Outlet />
             </main>
 
-            {/* ── Command Palette ── */}
             <AnimatePresence>
                 {showPalette && (
-                    <motion.div
+                    <div
                         className="modal-overlay"
-                        initial={{ opacity: 0 }}
-                        animate={{ opacity: 1 }}
-                        exit={{ opacity: 0 }}
                         onClick={() => setShowPalette(false)}
                     >
-                        <motion.div
+                        <div
                             className="command-palette"
-                            initial={{ opacity: 0, scale: 0.95, y: -10 }}
-                            animate={{ opacity: 1, scale: 1, y: 0 }}
-                            exit={{ opacity: 0, scale: 0.95, y: -10 }}
                             onClick={e => e.stopPropagation()}
                         >
                             <div className="command-input-wrapper">
                                 <Command size={18} />
                                 <input
                                     className="command-input"
-                                    placeholder="Type a command or search…"
+                                    placeholder="Type a command or search..."
                                     value={searchQuery}
                                     onChange={e => setSearchQuery(e.target.value)}
                                     autoFocus
@@ -245,7 +270,11 @@ export default function Layout() {
                                     <button
                                         key={i}
                                         className="command-item"
-                                        onClick={() => { cmd.action(); setShowPalette(false); setSearchQuery(''); }}
+                                        onClick={() => {
+                                            cmd.action();
+                                            setShowPalette(false);
+                                            setSearchQuery('');
+                                        }}
                                     >
                                         {cmd.label}
                                     </button>
@@ -256,8 +285,8 @@ export default function Layout() {
                                     </div>
                                 )}
                             </div>
-                        </motion.div>
-                    </motion.div>
+                        </div>
+                    </div>
                 )}
             </AnimatePresence>
         </div>

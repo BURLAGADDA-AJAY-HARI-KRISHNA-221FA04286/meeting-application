@@ -2,7 +2,7 @@ from datetime import datetime
 from sqlalchemy import DateTime, ForeignKey, Integer, Text, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.db.base import Base
+from app.db.base_class import Base
 
 
 class ChatMessage(Base):

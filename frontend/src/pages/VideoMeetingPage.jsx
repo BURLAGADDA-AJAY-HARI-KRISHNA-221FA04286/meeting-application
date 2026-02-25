@@ -103,6 +103,9 @@ export default function VideoMeetingPage() {
 
     // ── Refs ──
     const wsRef = useRef(null);
+    const reconnectTimerRef = useRef(null);
+    const reconnectAttemptsRef = useRef(0);
+    const shouldReconnectRef = useRef(true);
     const localVideoRef = useRef(null);
     const localStreamRef = useRef(null);
     const screenVideoRef = useRef(null);
@@ -137,6 +140,9 @@ export default function VideoMeetingPage() {
             navigate('/meetings/new', { replace: true });
             return;
         }
+
+        shouldReconnectRef.current = true;
+        reconnectAttemptsRef.current = 0;
 
         // CRITICAL: abort flag prevents orphaned streams from StrictMode double-mount
         let cancelled = false;
@@ -217,6 +223,11 @@ export default function VideoMeetingPage() {
         return () => {
             // Set abort flag FIRST — prevents late-resolving getUserMedia from leaking
             cancelled = true;
+            shouldReconnectRef.current = false;
+            if (reconnectTimerRef.current) {
+                clearTimeout(reconnectTimerRef.current);
+                reconnectTimerRef.current = null;
+            }
 
             // Stop any stream that IS already stored
             if (localStreamRef.current) {
@@ -267,11 +278,48 @@ export default function VideoMeetingPage() {
        WEBRTC SIGNALING
        ═══════════════════════════════════════════════ */
     const connectSignaling = (stream) => {
-        const ws = createVideoMeetingWebSocket(roomId, user.id, user.full_name || 'User');
+        let ws;
+        try {
+            ws = createVideoMeetingWebSocket(roomId, user.full_name || 'User');
+        } catch (e) {
+            toast.error('Session expired. Please login again.');
+            navigate('/login');
+            return;
+        }
+        if (reconnectTimerRef.current) {
+            clearTimeout(reconnectTimerRef.current);
+            reconnectTimerRef.current = null;
+        }
         wsRef.current = ws;
 
-        ws.onopen = () => toast.success('Connected to meeting');
-        ws.onclose = () => console.log("Disconnected from signaling");
+        ws.onopen = () => {
+            if (reconnectAttemptsRef.current > 0) {
+                toast.success('Reconnected to meeting');
+            } else {
+                toast.success('Connected to meeting');
+            }
+            reconnectAttemptsRef.current = 0;
+        };
+        ws.onclose = (event) => {
+            console.log("Disconnected from signaling");
+            if (event?.code === 1008) {
+                shouldReconnectRef.current = false;
+                toast.error('Session expired. Please login again.');
+                navigate('/login');
+                return;
+            }
+            if (!shouldReconnectRef.current || leavingRef.current) return;
+            reconnectAttemptsRef.current += 1;
+            const delay = Math.min(1000 * (2 ** (reconnectAttemptsRef.current - 1)), 10000);
+            if (reconnectAttemptsRef.current === 1) {
+                toast('Connection lost. Reconnecting...');
+            }
+            reconnectTimerRef.current = setTimeout(() => {
+                if (shouldReconnectRef.current && !leavingRef.current) {
+                    connectSignaling(localStreamRef.current);
+                }
+            }, delay);
+        };
         ws.onerror = (err) => console.error("WebSocket error:", err);
 
         ws.onmessage = async (event) => {
@@ -510,6 +558,12 @@ export default function VideoMeetingPage() {
 
     // ── Nuclear media kill — guarantees camera/mic OFF ──
     const killAllMedia = () => {
+        shouldReconnectRef.current = false;
+        if (reconnectTimerRef.current) {
+            clearTimeout(reconnectTimerRef.current);
+            reconnectTimerRef.current = null;
+        }
+
         // 1) Stop stream from ref (most reliable — always current)
         if (localStreamRef.current) {
             localStreamRef.current.getTracks().forEach(t => { t.stop(); t.enabled = false; });

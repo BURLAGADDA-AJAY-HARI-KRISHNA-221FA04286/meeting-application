@@ -92,6 +92,9 @@ export default function LiveMeetingPage() {
     const stageRef = useRef(null);
     const recognitionRef = useRef(null);
     const captionsOnRef = useRef(true);
+    const recognitionRestartTimerRef = useRef(null);
+    const recognitionWatchdogRef = useRef(null);
+    const lastRecognitionActivityRef = useRef(Date.now());
 
     // Keep camera stream ref in sync
     useEffect(() => {
@@ -103,13 +106,41 @@ export default function LiveMeetingPage() {
         captionsOnRef.current = captionsOn;
     }, [captionsOn]);
 
-    // ── Real-time Speech Recognition (auto-start) ──
+    // Real-time speech recognition (auto-start)
     useEffect(() => {
-        if (!isConnected) return;
+        const clearRestartTimer = () => {
+            if (recognitionRestartTimerRef.current) {
+                clearTimeout(recognitionRestartTimerRef.current);
+                recognitionRestartTimerRef.current = null;
+            }
+        };
+        const clearWatchdog = () => {
+            if (recognitionWatchdogRef.current) {
+                clearInterval(recognitionWatchdogRef.current);
+                recognitionWatchdogRef.current = null;
+            }
+        };
+        const scheduleRestart = (delayMs = 350) => {
+            clearRestartTimer();
+            if (!captionsOnRef.current || !isConnected) return;
+            recognitionRestartTimerRef.current = window.setTimeout(() => {
+                if (!captionsOnRef.current || !isConnected) return;
+                try { recognitionRef.current?.start(); } catch { }
+            }, delayMs);
+        };
+
+        if (!isConnected || !captionsOn) {
+            clearWatchdog();
+            clearRestartTimer();
+            try { recognitionRef.current?.stop(); } catch { }
+            recognitionRef.current = null;
+            return;
+        }
 
         const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
         if (!SpeechRecognition) return;
 
+        const speakerName = user?.full_name || 'You';
         const recognition = new SpeechRecognition();
         recognition.continuous = true;
         recognition.interimResults = true;
@@ -117,33 +148,36 @@ export default function LiveMeetingPage() {
         recognition.maxAlternatives = 1;
 
         recognition.onresult = (event) => {
+            lastRecognitionActivityRef.current = Date.now();
             for (let i = event.resultIndex; i < event.results.length; i++) {
                 const transcript = event.results[i][0].transcript.trim();
                 if (!transcript) continue;
 
                 if (event.results[i].isFinal) {
-                    // Final result — add to subtitles & send to others
+                    const confidence = Number(event.results[i][0].confidence ?? 0.9);
                     const entry = {
-                        speaker: user?.full_name || 'You',
+                        speaker: speakerName,
                         text: transcript,
+                        confidence,
                         timestamp: new Date().toISOString(),
                         final: true,
                     };
                     setSubtitles(prev => [...prev.slice(-50), entry]);
-                    // Send to other participants via WebSocket
                     try {
-                        wsRef.current?.send(JSON.stringify({
-                            type: 'SUBTITLE',
-                            speaker: entry.speaker,
-                            text: entry.text,
-                        }));
+                        if (wsRef.current?.readyState === WebSocket.OPEN) {
+                            wsRef.current.send(JSON.stringify({
+                                type: 'TRANSCRIPTION',
+                                speaker: entry.speaker,
+                                text: entry.text,
+                                confidence,
+                            }));
+                        }
                     } catch { }
                 } else {
-                    // Interim result — update live caption
                     setSubtitles(prev => {
                         const finals = prev.filter(s => s.final);
                         return [...finals.slice(-50), {
-                            speaker: user?.full_name || 'You',
+                            speaker: speakerName,
                             text: transcript,
                             final: false,
                         }];
@@ -153,37 +187,60 @@ export default function LiveMeetingPage() {
         };
 
         recognition.onerror = (e) => {
+            lastRecognitionActivityRef.current = Date.now();
+            if (e.error === 'service-not-allowed' || e.error === 'not-allowed') {
+                setCaptionsOn(false);
+                captionsOnRef.current = false;
+                return;
+            }
             if (e.error !== 'no-speech' && e.error !== 'aborted') {
                 console.warn('Speech recognition error:', e.error);
+            }
+            if (captionsOnRef.current && isConnected) {
+                scheduleRestart(1000);
             }
         };
 
         recognition.onend = () => {
-            // Auto-restart if still connected and captions enabled
-            if (captionsOnRef.current) {
-                try { recognition.start(); } catch { }
+            if (captionsOnRef.current && isConnected) {
+                scheduleRestart(300);
             }
         };
 
-        try {
-            recognition.start();
-            recognitionRef.current = recognition;
-        } catch { }
+        recognitionRef.current = recognition;
+        lastRecognitionActivityRef.current = Date.now();
+        clearRestartTimer();
+        try { recognition.start(); } catch { }
+
+        clearWatchdog();
+        recognitionWatchdogRef.current = window.setInterval(() => {
+            if (!captionsOnRef.current || !isConnected) return;
+            const staleMs = Date.now() - lastRecognitionActivityRef.current;
+            if (staleMs > 45000) {
+                try { recognitionRef.current?.stop(); } catch { }
+                scheduleRestart(250);
+                lastRecognitionActivityRef.current = Date.now();
+            }
+        }, 10000);
 
         return () => {
+            clearWatchdog();
+            clearRestartTimer();
             try { recognition.stop(); } catch { }
-            recognitionRef.current = null;
+            if (recognitionRef.current === recognition) {
+                recognitionRef.current = null;
+            }
         };
-    }, [isConnected, user]);
+    }, [isConnected, captionsOn, user?.full_name]);
 
-    // ── Apply Settings Effects ──
+    // Apply settings effects
     useEffect(() => {
         document.body.className = '';
         if (isDarkMode) document.body.classList.add('dark-mode');
         if (isReduceMotion) document.body.classList.add('reduce-motion');
     }, [isDarkMode, isReduceMotion]);
 
-    // ── Duration Timer ──
+    // Duration timer
     useEffect(() => {
         if (!isConnected) return;
         const interval = setInterval(() => {
@@ -199,7 +256,7 @@ export default function LiveMeetingPage() {
         return `${h}:${m}:${s}`;
     };
 
-    // ── Create Meeting if ID is missing ──
+    // Create meeting if ID is missing
     useEffect(() => {
         if (!meetingId && meetingTitle) {
             meetingsAPI.create({ title: meetingTitle, consent_given: true })
@@ -214,7 +271,7 @@ export default function LiveMeetingPage() {
         }
     }, [meetingId, meetingTitle, navigate]);
 
-    // ── Helpers ──
+    // Helpers
     const playDing = () => {
         try {
             const a = new AudioContext();
@@ -239,7 +296,7 @@ export default function LiveMeetingPage() {
         } catch { }
     };
 
-    // ── WebRTC Helpers ──
+    // WebRTC helpers
     const createPeerConnection = useCallback((targetId) => {
         const pc = new RTCPeerConnection({
             iceServers: [
@@ -310,28 +367,63 @@ export default function LiveMeetingPage() {
         }
     }, [createPeerConnection]);
 
-    // ── WebSocket & Core Logic ──
+    // WebSocket and core logic
     useEffect(() => {
         if (!meetingId || !myUserId) return;
 
-        const ws = createMeetingWebSocket(meetingId);
-        wsRef.current = ws;
+        let ws;
+        let isUnmounted = false;
+        let reconnectTimer = null;
+        let reconnectAttempts = 0;
 
-        ws.onopen = () => {
-            setIsConnected(true);
-            console.log('WebSocket connected to meeting', meetingId);
+        const connectSocket = () => {
+            try {
+                ws = createMeetingWebSocket(meetingId);
+            } catch (e) {
+                toast.error('Session expired. Please login again.');
+                navigate('/login');
+                return;
+            }
+            wsRef.current = ws;
+
+            ws.onopen = () => {
+                if (isUnmounted) return;
+                setIsConnected(true);
+                if (reconnectAttempts > 0) {
+                    toast.success('Reconnected to meeting');
+                }
+                reconnectAttempts = 0;
+                console.log('WebSocket connected to meeting', meetingId);
+            };
+
+            ws.onclose = (event) => {
+                if (isUnmounted) return;
+                setIsConnected(false);
+                console.log('WebSocket disconnected from meeting', meetingId);
+                if (event?.code === 1008) {
+                    toast.error('Session expired. Please login again.');
+                    navigate('/login');
+                    return;
+                }
+                reconnectAttempts += 1;
+                const delay = Math.min(1000 * (2 ** (reconnectAttempts - 1)), 10000);
+                if (reconnectAttempts === 1) {
+                    toast('Connection lost. Reconnecting...');
+                }
+                reconnectTimer = window.setTimeout(() => {
+                    if (!isUnmounted) connectSocket();
+                }, delay);
+            };
+
+            ws.onerror = (err) => {
+                console.error('WebSocket error:', err);
+                setIsConnected(false);
+            };
+
+            attachMessageHandler();
         };
 
-        ws.onclose = () => {
-            setIsConnected(false);
-            console.log('WebSocket disconnected from meeting', meetingId);
-        };
-
-        ws.onerror = (err) => {
-            console.error('WebSocket error:', err);
-            setIsConnected(false);
-        };
-
+        const attachMessageHandler = () => {
         ws.onmessage = async (event) => {
             try {
                 const data = JSON.parse(event.data);
@@ -354,7 +446,7 @@ export default function LiveMeetingPage() {
                         break;
                     case 'WAITING_USER':
                         if (myRole === 'host') {
-                            toast(`${data.name} is waiting to join`, { icon: '⏳' });
+                            toast(`${data.name} is waiting to join`);
                             setWaitingUsers(prev => [...prev, { id: data.user_id, name: data.name }]);
                         }
                         break;
@@ -404,7 +496,7 @@ export default function LiveMeetingPage() {
                     case 'HAND_RAISE': {
                         const name = data.user_id === myUserId ? 'You' : (participants.find(p => p.id === data.user_id)?.name || 'Someone');
                         if (userSettings.hand_raise_alert) playBeep();
-                        toast(`${name} ${data.is_raised ? 'raised' : 'lowered'} hand`, { icon: '✋' });
+                        toast(`${name} ${data.is_raised ? 'raised' : 'lowered'} hand`);
                         setHandRaiseQueue(prev =>
                             data.is_raised
                                 ? [...prev, { id: data.user_id, name }]
@@ -425,7 +517,7 @@ export default function LiveMeetingPage() {
                         break;
                     case 'POLL_CREATE':
                         setActivePoll({ question: data.question, options: data.options, votes: new Array(data.options.length).fill(0) });
-                        toast('New Poll Started!', { icon: '📊' });
+                        toast('New Poll Started!');
                         if (sidebarTab !== 'polls') setSidebarTab('polls');
                         break;
                     case 'POLL_VOTE':
@@ -438,7 +530,7 @@ export default function LiveMeetingPage() {
                         break;
                     case 'QA_ASK':
                         setQuestions(prev => [...prev, { ...data, myUpvote: false }]);
-                        toast('New Question Asked', { icon: '❓' });
+                        toast('New Question Asked');
                         break;
                     case 'QA_UPVOTE':
                         setQuestions(prev => prev.map(q =>
@@ -475,23 +567,28 @@ export default function LiveMeetingPage() {
                 console.error('WS message parse error:', err);
             }
         };
+        };
+
+        connectSocket();
 
         // Heartbeat
         const heartbeat = setInterval(() => {
-            if (ws.readyState === WebSocket.OPEN) {
-                ws.send(JSON.stringify({ type: 'PING' }));
+            if (wsRef.current?.readyState === WebSocket.OPEN) {
+                wsRef.current.send(JSON.stringify({ type: 'PING' }));
             }
         }, 30000);
 
         return () => {
+            isUnmounted = true;
             clearInterval(heartbeat);
-            ws.close();
+            if (reconnectTimer) window.clearTimeout(reconnectTimer);
+            try { wsRef.current?.close(); } catch { }
             Object.values(peerConnections.current).forEach(pc => pc.close());
             peerConnections.current = {};
         };
     }, [meetingId, myUserId]);
 
-    // ── Media Actions ──
+    // Media actions
     const toggleMute = () => {
         if (cameraStream) {
             cameraStream.getAudioTracks().forEach(track => track.enabled = isMuted);
@@ -586,11 +683,19 @@ export default function LiveMeetingPage() {
         toast(emoji, { duration: 2000, style: { fontSize: '2rem' } });
     };
 
-    // ── Guarantee cleanup on tab close / navigation ──
+    // Guarantee cleanup on tab close/navigation
     useEffect(() => {
         const onBeforeUnload = () => {
             if (cameraStreamRef.current) {
                 cameraStreamRef.current.getTracks().forEach(t => t.stop());
+            }
+            if (recognitionWatchdogRef.current) {
+                clearInterval(recognitionWatchdogRef.current);
+                recognitionWatchdogRef.current = null;
+            }
+            if (recognitionRestartTimerRef.current) {
+                clearTimeout(recognitionRestartTimerRef.current);
+                recognitionRestartTimerRef.current = null;
             }
             try { recognitionRef.current?.stop(); } catch { }
         };
@@ -606,10 +711,18 @@ export default function LiveMeetingPage() {
         // Stop speech recognition first
         setCaptionsOn(false);
         captionsOnRef.current = false;
+        if (recognitionWatchdogRef.current) {
+            clearInterval(recognitionWatchdogRef.current);
+            recognitionWatchdogRef.current = null;
+        }
+        if (recognitionRestartTimerRef.current) {
+            clearTimeout(recognitionRestartTimerRef.current);
+            recognitionRestartTimerRef.current = null;
+        }
         try { recognitionRef.current?.stop(); } catch { }
         recognitionRef.current = null;
 
-        // 1) Stop stream from ref (most reliable — always current)
+        // 1) Stop stream from ref (most reliable - always current)
         if (cameraStreamRef.current) {
             cameraStreamRef.current.getTracks().forEach(t => { t.stop(); t.enabled = false; });
             cameraStreamRef.current = null;
@@ -646,7 +759,7 @@ export default function LiveMeetingPage() {
         navigate('/meetings');
     };
 
-    // ── Share Helpers ──
+    // Share helpers
     const shareNotepad = () => {
         navigator.clipboard.writeText(sharedNote);
         toast.success('Notes copied to clipboard!');
@@ -675,8 +788,8 @@ export default function LiveMeetingPage() {
             return;
         }
         const totalVotes = activePoll.votes.reduce((a, b) => a + b, 0);
-        let text = `📊 Poll: ${activePoll.question}\n`;
-        text += '─'.repeat(30) + '\n';
+        let text = `Poll: ${activePoll.question}\n`;
+        text += '-'.repeat(30) + '\n';
         activePoll.options.forEach((opt, i) => {
             const pct = totalVotes ? Math.round((activePoll.votes[i] / totalVotes) * 100) : 0;
             text += `${opt}: ${activePoll.votes[i]} votes (${pct}%)\n`;
@@ -691,7 +804,7 @@ export default function LiveMeetingPage() {
         toast.success('Meeting link copied! Share it with anyone to join.');
     };
 
-    // ── Keyboard Shortcuts ──
+    // Keyboard shortcuts
     useEffect(() => {
         const handler = (e) => {
             if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
@@ -707,14 +820,14 @@ export default function LiveMeetingPage() {
         return () => window.removeEventListener('keydown', handler);
     }, [isMuted, isVideoOn, isHandRaised]);
 
-    // ── Zen Mode Timer ──
+    // Zen mode timer
     useEffect(() => {
         if (!showZenMode || zenTimer <= 0) return;
         const interval = setInterval(() => {
             setZenTimer(prev => {
                 if (prev <= 1) {
                     setShowZenMode(false);
-                    toast.success('Focus session complete! 🧘');
+                    toast.success('Focus session complete!');
                     return 60;
                 }
                 return prev - 1;
@@ -723,7 +836,7 @@ export default function LiveMeetingPage() {
         return () => clearInterval(interval);
     }, [showZenMode, zenTimer]);
 
-    // ── Render ──
+    // Render
     return (
         <div className={`page-container live-meeting-page ${isDarkMode ? 'dark-mode' : ''}`}>
 
@@ -851,7 +964,7 @@ export default function LiveMeetingPage() {
                 <div className="live-header-actions">
                     {/* Quick Reactions */}
                     <div style={{ display: 'flex', gap: 4 }}>
-                        {['👍', '🎉', '❤️', '😂'].map(emoji => (
+                        {[':)', ':D', '<3', 'LOL'].map(emoji => (
                             <button key={emoji} className="btn btn-ghost btn-sm" onClick={() => sendReaction(emoji)}
                                 style={{ fontSize: '1.1rem', padding: '4px 6px' }}>{emoji}</button>
                         ))}
@@ -920,11 +1033,14 @@ export default function LiveMeetingPage() {
                     </button>
                     <button className={`btn ${captionsOn ? 'btn-primary' : 'btn-secondary'}`}
                         onClick={() => {
-                            setCaptionsOn(!captionsOn);
-                            if (captionsOn) {
-                                try { recognitionRef.current?.stop(); } catch { }
-                            }
-                            toast(captionsOn ? 'Captions off' : 'Captions on');
+                            setCaptionsOn(prev => {
+                                const next = !prev;
+                                if (!next) {
+                                    try { recognitionRef.current?.stop(); } catch { }
+                                }
+                                toast(next ? 'Captions on' : 'Captions off');
+                                return next;
+                            });
                         }}
                         title="Toggle Captions"
                     >
@@ -945,7 +1061,7 @@ export default function LiveMeetingPage() {
                     {/* Watermark Overlay */}
                     {isWatermark && (
                         <div className="watermark-overlay">
-                            <div className="watermark-pattern">CONFIDENTIAL • {new Date().toLocaleDateString()}</div>
+                            <div className="watermark-pattern">CONFIDENTIAL - {new Date().toLocaleDateString()}</div>
                         </div>
                     )}
 
@@ -1008,7 +1124,7 @@ export default function LiveMeetingPage() {
                                         <span style={{ fontSize: '0.85rem' }}>Camera Off</span>
                                     </div>
                                 )}
-                                <div className="video-label">You {isMuted && '🔇'} {isHandRaised && '✋'}</div>
+                                <div className="video-label">You {isMuted && '[MUTED]'} {isHandRaised && '[HAND]'}</div>
                             </div>
 
                             {/* Remote Peers */}
@@ -1086,7 +1202,7 @@ export default function LiveMeetingPage() {
                                         padding: 8, background: 'rgba(245,158,11,0.1)',
                                         borderBottom: '1px solid rgba(245,158,11,0.2)'
                                     }}>
-                                        <small style={{ fontWeight: 'bold', color: '#f59e0b' }}>✋ Hand Queue</small>
+                                        <small style={{ fontWeight: 'bold', color: '#f59e0b' }}>Hand Queue</small>
                                         {handRaiseQueue.map((h, i) => (
                                             <div key={i} style={{ fontSize: '0.8rem' }}>{i + 1}. {h.name}</div>
                                         ))}
@@ -1164,7 +1280,6 @@ export default function LiveMeetingPage() {
                         )}
                         {sidebarTab === 'qa' && (
                             <QAPanel
-                                ws={wsRef.current}
                                 questions={questions}
                                 isHost={myRole === 'host'}
                                 onAsk={(qData) => wsRef.current?.send(JSON.stringify({
@@ -1209,7 +1324,6 @@ export default function LiveMeetingPage() {
                         )}
                         {sidebarTab === 'admin' && myRole === 'host' && (
                             <AdminControls
-                                ws={wsRef.current}
                                 meetingSettings={meetingSettings}
                                 participants={participants}
                                 waitingUsers={waitingUsers}
@@ -1227,6 +1341,10 @@ export default function LiveMeetingPage() {
                                     toast.success('User admitted');
                                     setWaitingUsers(prev => prev.filter(u => u.id !== uid));
                                 }}
+                                onDeny={(uid) => {
+                                    setWaitingUsers(prev => prev.filter(u => u.id !== uid));
+                                    toast.success('User denied');
+                                }}
                             />
                         )}
                     </div>
@@ -1235,3 +1353,4 @@ export default function LiveMeetingPage() {
         </div>
     );
 }
+

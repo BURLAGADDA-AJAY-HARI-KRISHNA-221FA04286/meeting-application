@@ -2,8 +2,7 @@
 Video Meeting API — Room Management, Signaling, and Transcript
 """
 import asyncio
-import hashlib
-import random
+import secrets
 import string
 from datetime import datetime
 from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect, HTTPException
@@ -17,6 +16,8 @@ from app.models.subtitle import Subtitle
 import uuid
 import logging
 import json
+from app.core.security import hash_password, verify_password, decode_token, sanitize_input
+from app.core.token_revocation import is_jti_revoked
 
 router = APIRouter(prefix="/video-meeting", tags=["video-meeting"])
 logger = logging.getLogger("meetingai.video")
@@ -26,19 +27,19 @@ logger = logging.getLogger("meetingai.video")
 def _generate_meeting_code() -> str:
     """Generate a human-readable meeting code like 'abc-defg-hij'."""
     chars = string.ascii_lowercase
-    p1 = ''.join(random.choices(chars, k=3))
-    p2 = ''.join(random.choices(chars, k=4))
-    p3 = ''.join(random.choices(chars, k=3))
+    p1 = ''.join(secrets.choice(chars) for _ in range(3))
+    p2 = ''.join(secrets.choice(chars) for _ in range(4))
+    p3 = ''.join(secrets.choice(chars) for _ in range(3))
     return f"{p1}-{p2}-{p3}"
 
 
 def _generate_password() -> str:
     """Generate a 6-digit numeric password."""
-    return ''.join(random.choices(string.digits, k=6))
+    return ''.join(secrets.choice(string.digits) for _ in range(6))
 
 
 def _hash_password(password: str) -> str:
-    return hashlib.sha256(password.encode()).hexdigest()
+    return hash_password(password)
 
 
 # In-memory store for active video rooms
@@ -75,7 +76,6 @@ class RoomInfoResponse(BaseModel):
     meeting_code: str
     title: str
     host_name: str
-    password: str | None = None
     join_link: str
     active_participants: int
     created_at: str
@@ -117,7 +117,6 @@ async def create_room(
         "meeting_code": meeting_code,
         "title": title,
         "password_hash": _hash_password(password),
-        "password_plain": password,  # stored for host to view
         "host_user_id": current_user.id,
         "host_name": current_user.full_name or current_user.email,
         "participants": [],
@@ -152,7 +151,7 @@ async def join_room(
         raise HTTPException(status_code=404, detail="Meeting not found. Please check the meeting code.")
 
     # Validate password
-    if _hash_password(payload.password) != room["password_hash"]:
+    if not verify_password(payload.password, room["password_hash"]):
         raise HTTPException(status_code=403, detail="Incorrect password.")
 
     return JoinResponse(
@@ -185,17 +184,11 @@ async def get_room_info(
             created_at=datetime.utcnow().isoformat(),
         )
 
-    # Only show password to the host
-    show_password = None
-    if room["host_user_id"] == current_user.id:
-        show_password = room["password_plain"]
-
     return RoomInfoResponse(
         room_id=room_id,
         meeting_code=room["meeting_code"],
         title=room["title"],
         host_name=room["host_name"],
-        password=show_password,
         join_link=f"/video-meeting/{room_id}",
         active_participants=len(room["participants"]),
         created_at=room["created_at"],
@@ -286,8 +279,38 @@ async def save_transcript(
 # ── WebSocket Signaling ──────────────────────────────────
 @router.websocket("/ws/{room_id}")
 async def video_meeting_websocket(
-    websocket: WebSocket, room_id: str, user_id: int, display_name: str
+    websocket: WebSocket,
+    room_id: str,
+    db: AsyncSession = Depends(get_db),
 ):
+    token = websocket.query_params.get("token")
+    display_name = sanitize_input(websocket.query_params.get("display_name", ""))
+
+    if not token:
+        protocol_header = websocket.headers.get("sec-websocket-protocol", "")
+        protocols = [v.strip() for v in protocol_header.split(",") if v.strip()]
+        # Expected protocols: ["bearer", "<jwt>"]
+        if len(protocols) >= 2 and protocols[0].lower() == "bearer":
+            token = protocols[1]
+
+    try:
+        if not token:
+            await websocket.close(code=1008)
+            return
+
+        payload = decode_token(token)
+        if payload.get("type") != "access":
+            raise ValueError("Invalid token type")
+        if await is_jti_revoked(db, payload.get("jti")):
+            raise ValueError("Token has been revoked")
+        user_id = int(payload.get("sub"))
+    except Exception:
+        await websocket.close(code=1008)
+        return
+
+    if not display_name:
+        display_name = f"User {user_id}"
+
     await websocket.accept()
 
     # Find room by room_id
@@ -304,7 +327,6 @@ async def video_meeting_websocket(
             "meeting_code": code,
             "title": "Meeting",
             "password_hash": "",
-            "password_plain": "",
             "host_user_id": user_id,
             "host_name": display_name,
             "participants": [],

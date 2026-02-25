@@ -1,4 +1,6 @@
+import re
 from datetime import datetime, timedelta, timezone
+from uuid import uuid4
 from jose import JWTError, jwt
 from passlib.context import CryptContext
 
@@ -17,7 +19,13 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
 
 def create_token(subject: str, minutes: int, token_type: str) -> str:
     expire = datetime.now(timezone.utc) + timedelta(minutes=minutes)
-    payload = {"sub": subject, "exp": expire, "type": token_type}
+    payload = {
+        "sub": subject,
+        "exp": expire,
+        "iat": datetime.now(timezone.utc),
+        "jti": uuid4().hex,
+        "type": token_type,
+    }
     return jwt.encode(payload, settings.secret_key, algorithm=settings.algorithm)
 
 
@@ -40,5 +48,11 @@ def sanitize_input(text: str) -> str:
     """Sanitize input text to prevent XSS."""
     if not text:
         return text
-    import bleach
-    return bleach.clean(text, tags=[], strip=True)
+    try:
+        import bleach
+        return bleach.clean(str(text), tags=[], attributes={}, strip=True)
+    except Exception:
+        # Fallback for environments where bleach is unavailable.
+        cleaned = re.sub(r"<[^>]*?>", "", str(text))
+        cleaned = re.sub(r"[\x00-\x1f\x7f]", "", cleaned)
+        return cleaned.strip()

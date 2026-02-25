@@ -56,9 +56,13 @@ export default function Polls({ ws, activePoll, isHost, onCreatePoll }) {
                 <div className="polls-empty" style={{ textAlign: 'center', color: 'var(--text-muted)' }}>
                     <Vote size={48} style={{ opacity: 0.2, marginBottom: 12 }} />
                     <p>No active poll.</p>
-                    <button className="btn btn-primary btn-sm" onClick={() => setCreationMode(true)} style={{ marginTop: 12 }}>
-                        Create Poll
-                    </button>
+                    {isHost ? (
+                        <button className="btn btn-primary btn-sm" onClick={() => setCreationMode(true)} style={{ marginTop: 12 }}>
+                            Create Poll
+                        </button>
+                    ) : (
+                        <p style={{ marginTop: 12, fontSize: '0.85rem' }}>Only host can create a poll.</p>
+                    )}
                 </div>
             ) : creationMode ? (
                 <form onSubmit={handleCreate} className="poll-creation-form">
@@ -132,9 +136,11 @@ export default function Polls({ ws, activePoll, isHost, onCreatePoll }) {
                             <p style={{ textAlign: 'center', fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: 8 }}>
                                 Thanks for voting! Results update live.
                             </p>
-                            <button className="btn btn-secondary btn-sm" style={{ width: '100%', marginTop: 12 }} onClick={() => setCreationMode(true)}>
-                                Start New Poll
-                            </button>
+                            {isHost && (
+                                <button className="btn btn-secondary btn-sm" style={{ width: '100%', marginTop: 12 }} onClick={() => setCreationMode(true)}>
+                                    Start New Poll
+                                </button>
+                            )}
                         </div>
                     )}
                 </div>

@@ -17,6 +17,7 @@ class TaskOut(BaseModel):
     priority: TaskPriority
     estimated_minutes: int | None = 0
     time_spent: int | None = 0
+    due_date: datetime | None = None
     created_at: datetime
 
     class Config:
@@ -30,6 +31,7 @@ class TaskCreate(BaseModel):
     status: TaskStatus = "todo"
     owner: str | None = Field(default=None, max_length=255)
     estimated_minutes: int | None = 30
+    due_date: datetime | None = None
 
 
 class TaskUpdate(BaseModel):
@@ -39,3 +41,4 @@ class TaskUpdate(BaseModel):
     title: str | None = Field(default=None, max_length=255)
     estimated_minutes: int | None = None
     time_spent: int | None = None
+    due_date: datetime | None = None

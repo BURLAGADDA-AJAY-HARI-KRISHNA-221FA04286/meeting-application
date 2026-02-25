@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { meetingsAPI, aiAPI, tasksAPI } from '../api';
+import { meetingsAPI, aiAPI, tasksAPI, githubAPI, jiraAPI } from '../api';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
     ArrowLeft, Brain, RefreshCw, Download, SquareCheck,
@@ -49,7 +49,9 @@ export default function MeetingDetailPage() {
                     if (aRes.data.status === 'complete' || aRes.data.status === 'cached') {
                         setAnalysis(aRes.data);
                     }
-                } catch { }
+                } catch {
+                    // Skip silently; meeting detail still renders without cached analysis payload.
+                }
             }
         } catch {
             toast.error('Failed to load meeting');
@@ -79,7 +81,7 @@ export default function MeetingDetailPage() {
     const handleGenerateTasks = async () => {
         const toastId = toast.loading('Generating tasks from action items...');
         try {
-            const res = await tasksAPI.generate(id);
+            await tasksAPI.generate(id);
             toast.success(`Tasks generated! Go to Tasks page to view.`, { id: toastId });
         } catch (err) {
             toast.error(err.response?.data?.detail || 'Task generation failed', { id: toastId });
@@ -87,8 +89,8 @@ export default function MeetingDetailPage() {
     };
 
     const handleExportGithub = async () => {
-        const token = localStorage.getItem('github_token');
-        const repo = localStorage.getItem('github_repo');
+        const token = sessionStorage.getItem('github_token') || localStorage.getItem('github_token');
+        const repo = sessionStorage.getItem('github_repo') || localStorage.getItem('github_repo');
 
         if (!token) {
             toast.error('Please configure GitHub Token in Settings first');
@@ -97,14 +99,50 @@ export default function MeetingDetailPage() {
 
         const targetRepo = prompt("Enter repository name (owner/repo):", repo || "owner/repo");
         if (!targetRepo) return;
-        if (targetRepo !== repo) localStorage.setItem('github_repo', targetRepo);
+        if (targetRepo !== repo) sessionStorage.setItem('github_repo', targetRepo);
 
         const toastId = toast.loading('Exporting to GitHub...');
         try {
-            const res = await tasksAPI.generate(id); // ensure tasks exist
+            await tasksAPI.generate(id); // ensure tasks exist
+            await githubAPI.exportTasks(id, targetRepo, null, token);
             toast.success(`Exported to ${targetRepo}`, { id: toastId });
         } catch (err) {
             toast.error(err.response?.data?.detail || 'Export failed', { id: toastId });
+        }
+    };
+
+    const handleExportJira = async () => {
+        const savedBaseUrl = sessionStorage.getItem('jira_base_url') || localStorage.getItem('jira_base_url') || '';
+        const savedProjectKey = sessionStorage.getItem('jira_project_key') || localStorage.getItem('jira_project_key') || '';
+        const savedEmail = sessionStorage.getItem('jira_email') || localStorage.getItem('jira_email') || '';
+        const savedToken = sessionStorage.getItem('jira_api_token') || localStorage.getItem('jira_api_token') || '';
+
+        const baseUrl = prompt('Jira Base URL (https://your-company.atlassian.net)', savedBaseUrl);
+        if (!baseUrl) return;
+        const projectKey = prompt('Jira Project Key (example: ENG)', savedProjectKey || 'ENG');
+        if (!projectKey) return;
+        const email = prompt('Jira account email', savedEmail);
+        if (!email) return;
+        const token = prompt('Jira API token', savedToken);
+        if (!token) return;
+
+        sessionStorage.setItem('jira_base_url', baseUrl);
+        sessionStorage.setItem('jira_project_key', projectKey);
+        sessionStorage.setItem('jira_email', email);
+        sessionStorage.setItem('jira_api_token', token);
+
+        const toastId = toast.loading('Exporting to Jira...');
+        try {
+            await tasksAPI.generate(id);
+            const res = await jiraAPI.exportTasks(id, {
+                base_url: baseUrl,
+                project_key: projectKey,
+                email,
+                token,
+            });
+            toast.success(`Exported ${res.data.exported}/${res.data.total} issues to Jira`, { id: toastId });
+        } catch (err) {
+            toast.error(err.response?.data?.detail || 'Jira export failed', { id: toastId });
         }
     };
 
@@ -163,7 +201,7 @@ export default function MeetingDetailPage() {
                 evidence: evidence,
                 chunks: res.data.chunks_searched || 0,
             }]);
-        } catch (err) {
+        } catch {
             setChatMessages(prev => [...prev, {
                 role: 'ai',
                 content: 'Sorry, I couldn\'t process that question. Make sure the meeting has been analyzed first.',
@@ -211,20 +249,6 @@ export default function MeetingDetailPage() {
         'What risks were discussed?',
         'What is the overall tone of the meeting?',
     ];
-
-    // Helper to safely get arrays from analysis (handles both dict-wrapped and direct arrays)
-    const getAnalysisArray = (key) => {
-        const val = a[key];
-        if (Array.isArray(val)) return val;
-        if (val && typeof val === 'object' && !Array.isArray(val)) {
-            // Check if it's wrapped like { "items": [...] } or { "action_items": [...] }
-            const keys = Object.keys(val);
-            for (const k of keys) {
-                if (Array.isArray(val[k])) return val[k];
-            }
-        }
-        return [];
-    };
 
     const getSummaryText = () => {
         const s = a.summary;
@@ -310,6 +334,12 @@ export default function MeetingDetailPage() {
                             </button>
                             <button className="btn btn-secondary" onClick={handleGenerateTasks} title="Generate tasks from action items → Tasks page">
                                 <SquareCheck size={14} /> Generate Tasks
+                            </button>
+                            <button className="btn btn-secondary" onClick={handleExportGithub} title="Export tasks to GitHub issues">
+                                <Github size={14} /> GitHub Export
+                            </button>
+                            <button className="btn btn-secondary" onClick={handleExportJira} title="Export tasks to Jira issues">
+                                <Target size={14} /> Jira Export
                             </button>
                             <button className="btn btn-secondary" onClick={handleAddToCalendar} title="Add to Google Calendar">
                                 <Calendar size={14} /> Calendar

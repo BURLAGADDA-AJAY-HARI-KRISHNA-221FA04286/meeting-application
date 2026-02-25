@@ -41,8 +41,13 @@ if "sqlite" in async_db_url:
 elif _need_ssl:
     # asyncpg uses ssl=True or an ssl.SSLContext instead of sslmode= URL param
     ssl_ctx = _ssl.create_default_context()
-    ssl_ctx.check_hostname = False
-    ssl_ctx.verify_mode = _ssl.CERT_NONE
+    if settings.db_ssl_verify:
+        ssl_ctx.check_hostname = True
+        ssl_ctx.verify_mode = _ssl.CERT_REQUIRED
+    else:
+        # For local/dev environments that don't provide CA bundles.
+        ssl_ctx.check_hostname = False
+        ssl_ctx.verify_mode = _ssl.CERT_NONE
     connect_args = {"ssl": ssl_ctx}
 else:
     connect_args = {}

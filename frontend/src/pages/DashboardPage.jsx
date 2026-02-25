@@ -24,13 +24,41 @@ export default function DashboardPage() {
     const [error, setError] = useState(null);
 
     useEffect(() => {
-        meetingsAPI.dashboard()
-            .then(res => setStats(res.data))
-            .catch((err) => {
-                console.error("Dashboard failed:", err);
-                setError(err.message || "Failed to load dashboard");
-            })
-            .finally(() => setLoading(false));
+        let active = true;
+
+        const loadDashboard = async () => {
+            setLoading(true);
+            setError(null);
+            let lastError = null;
+
+            for (let attempt = 1; attempt <= 2; attempt++) {
+                try {
+                    const res = await meetingsAPI.dashboard();
+                    if (!active) return;
+                    setStats(res.data || {});
+                    setError(null);
+                    return;
+                } catch (err) {
+                    lastError = err;
+                    if (attempt < 2) {
+                        await new Promise(resolve => setTimeout(resolve, 150));
+                    }
+                }
+            }
+
+            if (!active) return;
+            console.error("Dashboard failed:", lastError);
+            const detail = lastError?.response?.data?.detail;
+            setError(typeof detail === 'string' ? detail : (lastError?.message || "Failed to load dashboard"));
+        };
+
+        loadDashboard().finally(() => {
+            if (active) setLoading(false);
+        });
+
+        return () => {
+            active = false;
+        };
     }, []);
 
     const greeting = () => {
@@ -104,7 +132,7 @@ export default function DashboardPage() {
     return (
         <div className="page-container">
             {/* ── Hero ── */}
-            <motion.div className="dashboard-hero" {...fadeUp} transition={{ duration: 0.4 }}>
+            <motion.div className="dashboard-hero" {...fadeUp} transition={{ duration: 0.25 }}>
                 <div className="dashboard-hero-content">
                     <div>
                         <h1 className="hero-title">
@@ -147,7 +175,7 @@ export default function DashboardPage() {
                         key={card.label}
                         className="stat-card"
                         {...fadeUp}
-                        transition={{ delay: 0.1 + i * 0.05 }}
+                        transition={{ delay: 0.05 + i * 0.03 }}
                     >
                         <div className="stat-card-top">
                             <div className="stat-icon" style={{ background: card.bg, color: card.color }}>
@@ -167,7 +195,7 @@ export default function DashboardPage() {
             <div className="dashboard-main-grid">
                 <div className="dashboard-left">
                     {/* Task Completion */}
-                    <motion.div className="card" {...fadeUp} transition={{ delay: 0.3 }}>
+                    <motion.div className="card" {...fadeUp} transition={{ delay: 0.15 }}>
                         <div className="card-header">
                             <div>
                                 <div className="card-title">Task Progress</div>
@@ -226,7 +254,7 @@ export default function DashboardPage() {
                     </motion.div>
 
                     {/* Quick Start */}
-                    <motion.div className="card" {...fadeUp} transition={{ delay: 0.35 }}>
+                    <motion.div className="card" {...fadeUp} transition={{ delay: 0.2 }}>
                         <div className="card-header">
                             <div>
                                 <div className="card-title">Quick Start</div>
@@ -261,7 +289,7 @@ export default function DashboardPage() {
 
                 <div className="dashboard-right">
                     {/* Recent Meetings */}
-                    <motion.div className="card" {...fadeUp} transition={{ delay: 0.4 }}>
+                    <motion.div className="card" {...fadeUp} transition={{ delay: 0.2 }}>
                         <div className="card-header">
                             <div>
                                 <div className="card-title">Recent Meetings</div>
@@ -305,7 +333,7 @@ export default function DashboardPage() {
                     </motion.div>
 
                     {/* AI Features */}
-                    <motion.div className="card ai-features-card" {...fadeUp} transition={{ delay: 0.45 }}>
+                    <motion.div className="card ai-features-card" {...fadeUp} transition={{ delay: 0.25 }}>
                         <div className="card-header">
                             <div>
                                 <div className="card-title">
@@ -322,7 +350,7 @@ export default function DashboardPage() {
                                     className="ai-feature-item"
                                     initial={{ opacity: 0, x: -10 }}
                                     animate={{ opacity: 1, x: 0 }}
-                                    transition={{ delay: 0.5 + i * 0.07 }}
+                                    transition={{ delay: 0.3 + i * 0.04 }}
                                 >
                                     <f.icon size={16} style={{ color: 'var(--accent-primary)' }} />
                                     {f.text}

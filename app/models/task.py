@@ -19,6 +19,7 @@ class Task(Base):
     # Time Tracking (in minutes)
     estimated_minutes: Mapped[int] = mapped_column(Integer, default=30, nullable=True)
     time_spent: Mapped[int] = mapped_column(Integer, default=0, nullable=True)
+    due_date: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
 
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)

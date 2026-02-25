@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useMemo } from 'react';
 import { tasksAPI, meetingsAPI } from '../api';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -31,23 +31,54 @@ export default function TaskBoardPage() {
         estimated_minutes: 30,
         time_spent: 0,
         status: 'todo',
-        owner: ''
+        owner: '',
+        due_date: '',
     });
 
-    const fetchTasks = useCallback(() => {
-        tasksAPI.list()
-            .then(res => setTasks(res.data))
-            .catch(() => toast.error('Failed to load tasks'));
+    const fetchTasks = useCallback(async () => {
+        const res = await tasksAPI.list({ limit: 200 });
+        return res.data || [];
     }, []);
 
-    const fetchMeetings = useCallback(() => {
-        meetingsAPI.list({ limit: 20 })
-            .then(res => setMeetings(res.data))
-            .catch(() => { });
+    const fetchMeetings = useCallback(async () => {
+        const res = await meetingsAPI.list({ limit: 20 });
+        return res.data || [];
     }, []);
 
     useEffect(() => {
-        Promise.all([fetchTasks(), fetchMeetings()]).finally(() => setLoading(false));
+        let active = true;
+
+        const loadBoard = async () => {
+            setLoading(true);
+            let lastError = null;
+
+            for (let attempt = 1; attempt <= 2; attempt++) {
+                try {
+                    const [taskRows, meetingRows] = await Promise.all([fetchTasks(), fetchMeetings()]);
+                    if (!active) return;
+                    setTasks(taskRows);
+                    setMeetings(meetingRows);
+                    return;
+                } catch (err) {
+                    lastError = err;
+                    if (attempt < 2) {
+                        await new Promise(resolve => setTimeout(resolve, 150));
+                    }
+                }
+            }
+
+            if (!active) return;
+            const detail = lastError?.response?.data?.detail;
+            toast.error(typeof detail === 'string' ? detail : 'Failed to load tasks');
+        };
+
+        loadBoard().finally(() => {
+            if (active) setLoading(false);
+        });
+
+        return () => {
+            active = false;
+        };
     }, [fetchTasks, fetchMeetings]);
 
     const handleSaveTask = async (e) => {
@@ -58,16 +89,21 @@ export default function TaskBoardPage() {
         }
 
         try {
+            const payload = {
+                ...formData,
+                due_date: formData.due_date ? `${formData.due_date}T00:00:00` : null,
+            };
             if (editingTask) {
-                await tasksAPI.update(editingTask.id, formData);
+                await tasksAPI.update(editingTask.id, payload);
                 toast.success('Task updated');
             } else {
-                await tasksAPI.create(formData);
+                await tasksAPI.create(payload);
                 toast.success('Task created');
             }
             setIsModalOpen(false);
             setEditingTask(null);
-            fetchTasks(); // Refresh list
+            const refreshed = await fetchTasks();
+            setTasks(refreshed);
         } catch (err) {
             toast.error(editingTask ? 'Failed to update task' : 'Failed to create task');
         }
@@ -93,8 +129,9 @@ export default function TaskBoardPage() {
                 meeting_id: task.meeting_id,
                 estimated_minutes: task.estimated_minutes || 0,
                 time_spent: task.time_spent || 0,
-                status: task.status,
-                owner: task.owner || ''
+                status: task.status === 'in_progress' ? 'in-progress' : task.status,
+                owner: task.owner || '',
+                due_date: task.due_date ? String(task.due_date).slice(0, 10) : '',
             });
         } else {
             setEditingTask(null);
@@ -105,7 +142,8 @@ export default function TaskBoardPage() {
                 estimated_minutes: 30,
                 time_spent: 0,
                 status: 'todo',
-                owner: ''
+                owner: '',
+                due_date: '',
             });
         }
         setIsModalOpen(true);
@@ -121,17 +159,20 @@ export default function TaskBoardPage() {
         }
     };
 
-    const filtered = priorityFilter === 'all'
+    const filtered = useMemo(() => priorityFilter === 'all'
         ? tasks
-        : tasks.filter(t => (t.priority || '').toLowerCase() === priorityFilter);
+        : tasks.filter(t => (t.priority || '').toLowerCase() === priorityFilter),
+        [tasks, priorityFilter]);
+
+    const normalizeStatus = (status) => status === 'in_progress' ? 'in-progress' : (status || 'todo');
 
     const columns = [
         { id: 'todo', label: 'To Do', emoji: '📋', color: '#6366f1' },
-        { id: 'in_progress', label: 'In Progress', emoji: '🔄', color: '#f59e0b' },
+        { id: 'in-progress', label: 'In Progress', emoji: '🔄', color: '#f59e0b' },
         { id: 'done', label: 'Done', emoji: '✅', color: '#10b981' },
     ];
 
-    const getColumnTasks = (colId) => filtered.filter(t => (t.status || 'todo') === colId);
+    const getColumnTasks = (colId) => filtered.filter(t => normalizeStatus(t.status) === colId);
 
     // Stats
     const total = tasks.length;
@@ -230,7 +271,7 @@ export default function TaskBoardPage() {
                     {columns.map((col, ci) => {
                         const colTasks = getColumnTasks(col.id);
                         return (
-                            <motion.div key={col.id} className="kanban-column" {...fadeUp} transition={{ delay: 0.1 + ci * 0.05 }}>
+                            <motion.div key={col.id} className="kanban-column" {...fadeUp} transition={{ delay: 0.03 + ci * 0.03 }}>
                                 <div className="kanban-column-header">
                                     <span className="kc-emoji">{col.emoji}</span>
                                     <span className="kc-title">{col.label}</span>
@@ -245,7 +286,7 @@ export default function TaskBoardPage() {
                                                 <motion.div
                                                     key={task.id}
                                                     className="kanban-card"
-                                                    layout
+
                                                     initial={{ opacity: 0, scale: 0.95 }}
                                                     animate={{ opacity: 1, scale: 1 }}
                                                     exit={{ opacity: 0, scale: 0.9 }}
@@ -264,10 +305,17 @@ export default function TaskBoardPage() {
                                                         <span className="kcard-time" title="Est. vs Actual">
                                                             <Clock size={12} /> {task.estimated_minutes || 0}m / {task.time_spent || 0}m
                                                         </span>
+                                                        {task.due_date && (
+                                                            <span className="kcard-time" title="Due date">
+                                                                Due {new Date(task.due_date).toLocaleDateString()}
+                                                            </span>
+                                                        )}
                                                     </div>
                                                     <div className="kcard-actions">
-                                                        {col.id !== 'todo' && <button className="btn-icon" onClick={() => updateStatus(task.id, 'todo')}><ArrowLeft size={12} /></button>}
-                                                        {col.id !== 'done' && <button className="btn-icon" onClick={() => updateStatus(task.id, 'done')}><ArrowRight size={12} /></button>}
+                                                        {col.id === 'in-progress' && <button className="btn-icon" onClick={() => updateStatus(task.id, 'todo')} title="Move to To Do"><ArrowLeft size={12} /></button>}
+                                                        {col.id === 'done' && <button className="btn-icon" onClick={() => updateStatus(task.id, 'in-progress')} title="Move to In Progress"><ArrowLeft size={12} /></button>}
+                                                        {col.id === 'todo' && <button className="btn-icon" onClick={() => updateStatus(task.id, 'in-progress')} title="Move to In Progress"><ArrowRight size={12} /></button>}
+                                                        {col.id === 'in-progress' && <button className="btn-icon" onClick={() => updateStatus(task.id, 'done')} title="Move to Done"><ArrowRight size={12} /></button>}
                                                     </div>
                                                 </motion.div>
                                             ))
@@ -326,6 +374,10 @@ export default function TaskBoardPage() {
                                 <div className="form-group">
                                     <label>Assignee</label>
                                     <input className="input" value={formData.owner} onChange={e => setFormData({ ...formData, owner: e.target.value })} placeholder="e.g. John Doe" />
+                                </div>
+                                <div className="form-group">
+                                    <label>Due Date</label>
+                                    <input type="date" className="input" value={formData.due_date} onChange={e => setFormData({ ...formData, due_date: e.target.value })} />
                                 </div>
                                 <div className="modal-actions">
                                     <button type="button" className="btn btn-ghost" onClick={() => setIsModalOpen(false)}>Cancel</button>

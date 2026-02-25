@@ -1,0 +1,456 @@
+2026-02-25 18:58:38 | WARNING  | meetingai | Prometheus client not installed, metrics disabled
+2026-02-25 18:58:38 | INFO     | meetingai | ==================================================
+2026-02-25 18:58:38 | INFO     | meetingai |   AI Meeting Intelligence System v2.1.0
+2026-02-25 18:58:38 | INFO     | meetingai |   Environment: dev
+2026-02-25 18:58:38 | INFO     | meetingai |   Database: postgresql+psycopg://neondb_ow...
+2026-02-25 18:58:38 | INFO     | meetingai |   Gemini Model: gemini-2.5-flash
+2026-02-25 18:58:38 | INFO     | meetingai |   AI: Enabled
+2026-02-25 18:58:38 | INFO     | meetingai |   FFmpeg: Detected (ffmpeg version 8.0.1-essentials_build-www.gyan.dev Copyright (c) 2000-2025 the FFmpeg developers)
+2026-02-25 18:58:38 | INFO     | meetingai | ==================================================
+2026-02-25 18:58:49 | INFO     | meetingai | Applied schema upgrade: added tasks.due_date column
+2026-02-25 18:58:50 | INFO     | meetingai | Applied schema upgrade: added ix_tasks_due_date index
+2026-02-25 18:58:50 | INFO     | meetingai | Database tables created/verified
+2026-02-25 18:58:55 | INFO     | meetingai | 7abe6e6b GET /health -> 200 (14.3ms)
+INFO:     127.0.0.1:10209 - "GET /health HTTP/1.1" 200 OK
+2026-02-25 18:59:15 | INFO     | meetingai | 94cedf20 POST /api/v1/register -> 201 (10617.7ms)
+2026-02-25 18:59:26 | INFO     | meetingai | 58705853 POST /api/v1/register -> 201 (3694.5ms)
+INFO:     127.0.0.1:49314 - "POST /api/v1/register HTTP/1.1" 201 Created
+2026-02-25 18:59:29 | INFO     | meetingai | 40148e86 GET /api/v1/me -> 200 (2367.6ms)
+INFO:     127.0.0.1:49314 - "GET /api/v1/me HTTP/1.1" 200 OK
+2026-02-25 18:59:31 | INFO     | meetingai | 90fcdcf2 GET /api/v1/tasks -> 200 (2441.8ms)
+INFO:     127.0.0.1:49314 - "GET /api/v1/tasks?limit=20 HTTP/1.1" 200 OK
+2026-02-25 19:00:56 | INFO     | meetingai | a8670b64 POST /api/v1/register -> 201 (4291.8ms)
+INFO:     127.0.0.1:18057 - "POST /api/v1/register HTTP/1.1" 201 Created
+2026-02-25 19:00:59 | ERROR    | meetingai | Unhandled exception: No module named 'bleach'
+  + Exception Group Traceback (most recent call last):
+  |   File "C:\Users\ajayb\OneDrive\Desktop\meeting app\.venv313\Lib\site-packages\starlette\_utils.py", line 79, in collapse_excgroups
+  |     yield
+  |   File "C:\Users\ajayb\OneDrive\Desktop\meeting app\.venv313\Lib\site-packages\starlette\middleware\base.py", line 183, in __call__
+  |     async with anyio.create_task_group() as task_group:
+  |                ~~~~~~~~~~~~~~~~~~~~~~~^^
+  |   File "C:\Users\ajayb\OneDrive\Desktop\meeting app\.venv313\Lib\site-packages\anyio\_backends\_asyncio.py", line 783, in __aexit__
+  |     raise BaseExceptionGroup(
+  |         "unhandled errors in a TaskGroup", self._exceptions
+  |     ) from None
+  | ExceptionGroup: unhandled errors in a TaskGroup (1 sub-exception)
+  +-+---------------- 1 ----------------
+    | Traceback (most recent call last):
+    |   File "C:\Users\ajayb\OneDrive\Desktop\meeting app\.venv313\Lib\site-packages\starlette\middleware\errors.py", line 164, in __call__
+    |     await self.app(scope, receive, _send)
+    |   File "C:\Users\ajayb\OneDrive\Desktop\meeting app\.venv313\Lib\site-packages\starlette\middleware\base.py", line 182, in __call__
+    |     with recv_stream, send_stream, collapse_excgroups():
+    |                                    ~~~~~~~~~~~~~~~~~~^^
+    |   File "C:\Program Files\WindowsApps\PythonSoftwareFoundation.Python.3.13_3.13.3312.0_x64__qbz5n2kfra8p0\Lib\contextlib.py", line 162, in __exit__
+    |     self.gen.throw(value)
+    |     ~~~~~~~~~~~~~~^^^^^^^
+    |   File "C:\Users\ajayb\OneDrive\Desktop\meeting app\.venv313\Lib\site-packages\starlette\_utils.py", line 85, in collapse_excgroups
+    |     raise exc
+    |   File "C:\Users\ajayb\OneDrive\Desktop\meeting app\.venv313\Lib\site-packages\starlette\middleware\base.py", line 184, in __call__
+    |     response = await self.dispatch_func(request, call_next)
+    |                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |   File "C:\Users\ajayb\OneDrive\Desktop\meeting app\app\main.py", line 169, in add_security_headers
+    |     response = await call_next(request)
+    |                ^^^^^^^^^^^^^^^^^^^^^^^^
+    |   File "C:\Users\ajayb\OneDrive\Desktop\meeting app\.venv313\Lib\site-packages\starlette\middleware\base.py", line 159, in call_next
+    |     raise app_exc
+    |   File "C:\Users\ajayb\OneDrive\Desktop\meeting app\.venv313\Lib\site-packages\starlette\middleware\base.py", line 144, in coro
+    |     await self.app(scope, receive_or_disconnect, send_no_error)
+    |   File "C:\Users\ajayb\OneDrive\Desktop\meeting app\.venv313\Lib\site-packages\starlette\middleware\trustedhost.py", line 51, in __call__
+    |     await self.app(scope, receive, send)
+    |   File "C:\Users\ajayb\OneDrive\Desktop\meeting app\.venv313\Lib\site-packages\starlette\middleware\base.py", line 182, in __call__
+    |     with recv_stream, send_stream, collapse_excgroups():
+    |                                    ~~~~~~~~~~~~~~~~~~^^
+    |   File "C:\Program Files\WindowsApps\PythonSoftwareFoundation.Python.3.13_3.13.3312.0_x64__qbz5n2kfra8p0\Lib\contextlib.py", line 162, in __exit__
+    |     self.gen.throw(value)
+    |     ~~~~~~~~~~~~~~^^^^^^^
+    |   File "C:\Users\ajayb\OneDrive\Desktop\meeting app\.venv313\Lib\site-packages\starlette\_utils.py", line 85, in collapse_excgroups
+    |     raise exc
+    |   File "C:\Users\ajayb\OneDrive\Desktop\meeting app\.venv313\Lib\site-packages\starlette\middleware\base.py", line 184, in __call__
+    |     response = await self.dispatch_func(request, call_next)
+    |                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |   File "C:\Users\ajayb\OneDrive\Desktop\meeting app\app\main.py", line 72, in dispatch
+    |     response = await call_next(request)
+    |                ^^^^^^^^^^^^^^^^^^^^^^^^
+    |   File "C:\Users\ajayb\OneDrive\Desktop\meeting app\.venv313\Lib\site-packages\starlette\middleware\base.py", line 159, in call_next
+    |     raise app_exc
+    |   File "C:\Users\ajayb\OneDrive\Desktop\meeting app\.venv313\Lib\site-packages\starlette\middleware\base.py", line 144, in coro
+    |     await self.app(scope, receive_or_disconnect, send_no_error)
+    |   File "C:\Users\ajayb\OneDrive\Desktop\meeting app\.venv313\Lib\site-packages\starlette\middleware\gzip.py", line 29, in __call__
+    |     await responder(scope, receive, send)
+    |   File "C:\Users\ajayb\OneDrive\Desktop\meeting app\.venv313\Lib\site-packages\starlette\middleware\gzip.py", line 46, in __call__
+    |     await self.app(scope, receive, self.send_with_compression)
+    |   File "C:\Users\ajayb\OneDrive\Desktop\meeting app\.venv313\Lib\site-packages\starlette\middleware\cors.py", line 85, in __call__
+    |     await self.app(scope, receive, send)
+    |   File "C:\Users\ajayb\OneDrive\Desktop\meeting app\.venv313\Lib\site-packages\starlette\middleware\exceptions.py", line 63, in __call__
+    |     await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+    |   File "C:\Users\ajayb\OneDrive\Desktop\meeting app\.venv313\Lib\site-packages\starlette\_exception_handler.py", line 53, in wrapped_app
+    |     raise exc
+    |   File "C:\Users\ajayb\OneDrive\Desktop\meeting app\.venv313\Lib\site-packages\starlette\_exception_handler.py", line 42, in wrapped_app
+    |     await app(scope, receive, sender)
+    |   File "C:\Users\ajayb\OneDrive\Desktop\meeting app\.venv313\Lib\site-packages\starlette\routing.py", line 716, in __call__
+    |     await self.middleware_stack(scope, receive, send)
+    |   File "C:\Users\ajayb\OneDrive\Desktop\meeting app\.venv313\Lib\site-packages\starlette\routing.py", line 736, in app
+    |     await route.handle(scope, receive, send)
+    |   File "C:\Users\ajayb\OneDrive\Desktop\meeting app\.venv313\Lib\site-packages\starlette\routing.py", line 290, in handle
+    |     await self.app(scope, receive, send)
+    |   File "C:\Users\ajayb\OneDrive\Desktop\meeting app\.venv313\Lib\site-packages\starlette\routing.py", line 78, in app
+    |     await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+    |   File "C:\Users\ajayb\OneDrive\Desktop\meeting app\.venv313\Lib\site-packages\starlette\_exception_handler.py", line 53, in wrapped_app
+    |     raise exc
+    |   File "C:\Users\ajayb\OneDrive\Desktop\meeting app\.venv313\Lib\site-packages\starlette\_exception_handler.py", line 42, in wrapped_app
+    |     await app(scope, receive, sender)
+    |   File "C:\Users\ajayb\OneDrive\Desktop\meeting app\.venv313\Lib\site-packages\starlette\routing.py", line 75, in app
+    |     response = await f(request)
+    |                ^^^^^^^^^^^^^^^^
+    |   File "C:\Users\ajayb\OneDrive\Desktop\meeting app\.venv313\Lib\site-packages\fastapi\routing.py", line 302, in app
+    |     raw_response = await run_endpoint_function(
+    |                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |     ...<3 lines>...
+    |     )
+    |     ^
+    |   File "C:\Users\ajayb\OneDrive\Desktop\meeting app\.venv313\Lib\site-packages\fastapi\routing.py", line 213, in run_endpoint_function
+    |     return await dependant.call(**values)
+    |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |   File "C:\Users\ajayb\OneDrive\Desktop\meeting app\app\api\v1\meetings.py", line 118, in create_meeting
+    |     title=sanitize_input(payload.title),
+    |           ~~~~~~~~~~~~~~^^^^^^^^^^^^^^^
+    |   File "C:\Users\ajayb\OneDrive\Desktop\meeting app\app\core\security.py", line 50, in sanitize_input
+    |     import bleach
+    | ModuleNotFoundError: No module named 'bleach'
+    +------------------------------------
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "C:\Users\ajayb\OneDrive\Desktop\meeting app\.venv313\Lib\site-packages\starlette\middleware\errors.py", line 164, in __call__
+    await self.app(scope, receive, _send)
+  File "C:\Users\ajayb\OneDrive\Desktop\meeting app\.venv313\Lib\site-packages\starlette\middleware\base.py", line 182, in __call__
+    with recv_stream, send_stream, collapse_excgroups():
+                                   ~~~~~~~~~~~~~~~~~~^^
+  File "C:\Program Files\WindowsApps\PythonSoftwareFoundation.Python.3.13_3.13.3312.0_x64__qbz5n2kfra8p0\Lib\contextlib.py", line 162, in __exit__
+    self.gen.throw(value)
+    ~~~~~~~~~~~~~~^^^^^^^
+  File "C:\Users\ajayb\OneDrive\Desktop\meeting app\.venv313\Lib\site-packages\starlette\_utils.py", line 85, in collapse_excgroups
+    raise exc
+  File "C:\Users\ajayb\OneDrive\Desktop\meeting app\.venv313\Lib\site-packages\starlette\middleware\base.py", line 184, in __call__
+    response = await self.dispatch_func(request, call_next)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ajayb\OneDrive\Desktop\meeting app\app\main.py", line 169, in add_security_headers
+    response = await call_next(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ajayb\OneDrive\Desktop\meeting app\.venv313\Lib\site-packages\starlette\middleware\base.py", line 159, in call_next
+    raise app_exc
+  File "C:\Users\ajayb\OneDrive\Desktop\meeting app\.venv313\Lib\site-packages\starlette\middleware\base.py", line 144, in coro
+    await self.app(scope, receive_or_disconnect, send_no_error)
+  File "C:\Users\ajayb\OneDrive\Desktop\meeting app\.venv313\Lib\site-packages\starlette\middleware\trustedhost.py", line 51, in __call__
+    await self.app(scope, receive, send)
+  File "C:\Users\ajayb\OneDrive\Desktop\meeting app\.venv313\Lib\site-packages\starlette\middleware\base.py", line 182, in __call__
+    with recv_stream, send_stream, collapse_excgroups():
+                                   ~~~~~~~~~~~~~~~~~~^^
+  File "C:\Program Files\WindowsApps\PythonSoftwareFoundation.Python.3.13_3.13.3312.0_x64__qbz5n2kfra8p0\Lib\contextlib.py", line 162, in __exit__
+    self.gen.throw(value)
+    ~~~~~~~~~~~~~~^^^^^^^
+  File "C:\Users\ajayb\OneDrive\Desktop\meeting app\.venv313\Lib\site-packages\starlette\_utils.py", line 85, in collapse_excgroups
+    raise exc
+  File "C:\Users\ajayb\OneDrive\Desktop\meeting app\.venv313\Lib\site-packages\starlette\middleware\base.py", line 184, in __call__
+    response = await self.dispatch_func(request, call_next)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ajayb\OneDrive\Desktop\meeting app\app\main.py", line 72, in dispatch
+    response = await call_next(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ajayb\OneDrive\Desktop\meeting app\.venv313\Lib\site-packages\starlette\middleware\base.py", line 159, in call_next
+    raise app_exc
+  File "C:\Users\ajayb\OneDrive\Desktop\meeting app\.venv313\Lib\site-packages\starlette\middleware\base.py", line 144, in coro
+    await self.app(scope, receive_or_disconnect, send_no_error)
+  File "C:\Users\ajayb\OneDrive\Desktop\meeting app\.venv313\Lib\site-packages\starlette\middleware\gzip.py", line 29, in __call__
+    await responder(scope, receive, send)
+  File "C:\Users\ajayb\OneDrive\Desktop\meeting app\.venv313\Lib\site-packages\starlette\middleware\gzip.py", line 46, in __call__
+    await self.app(scope, receive, self.send_with_compression)
+  File "C:\Users\ajayb\OneDrive\Desktop\meeting app\.venv313\Lib\site-packages\starlette\middleware\cors.py", line 85, in __call__
+    await self.app(scope, receive, send)
+  File "C:\Users\ajayb\OneDrive\Desktop\meeting app\.venv313\Lib\site-packages\starlette\middleware\exceptions.py", line 63, in __call__
+    await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+  File "C:\Users\ajayb\OneDrive\Desktop\meeting app\.venv313\Lib\site-packages\starlette\_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "C:\Users\ajayb\OneDrive\Desktop\meeting app\.venv313\Lib\site-packages\starlette\_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "C:\Users\ajayb\OneDrive\Desktop\meeting app\.venv313\Lib\site-packages\starlette\routing.py", line 716, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "C:\Users\ajayb\OneDrive\Desktop\meeting app\.venv313\Lib\site-packages\starlette\routing.py", line 736, in app
+    await route.handle(scope, receive, send)
+  File "C:\Users\ajayb\OneDrive\Desktop\meeting app\.venv313\Lib\site-packages\starlette\routing.py", line 290, in handle
+    await self.app(scope, receive, send)
+  File "C:\Users\ajayb\OneDrive\Desktop\meeting app\.venv313\Lib\site-packages\starlette\routing.py", line 78, in app
+    await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+  File "C:\Users\ajayb\OneDrive\Desktop\meeting app\.venv313\Lib\site-packages\starlette\_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "C:\Users\ajayb\OneDrive\Desktop\meeting app\.venv313\Lib\site-packages\starlette\_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "C:\Users\ajayb\OneDrive\Desktop\meeting app\.venv313\Lib\site-packages\starlette\routing.py", line 75, in app
+    response = await f(request)
+               ^^^^^^^^^^^^^^^^
+  File "C:\Users\ajayb\OneDrive\Desktop\meeting app\.venv313\Lib\site-packages\fastapi\routing.py", line 302, in app
+    raw_response = await run_endpoint_function(
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<3 lines>...
+    )
+    ^
+  File "C:\Users\ajayb\OneDrive\Desktop\meeting app\.venv313\Lib\site-packages\fastapi\routing.py", line 213, in run_endpoint_function
+    return await dependant.call(**values)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ajayb\OneDrive\Desktop\meeting app\app\api\v1\meetings.py", line 118, in create_meeting
+    title=sanitize_input(payload.title),
+          ~~~~~~~~~~~~~~^^^^^^^^^^^^^^^
+  File "C:\Users\ajayb\OneDrive\Desktop\meeting app\app\core\security.py", line 50, in sanitize_input
+    import bleach
+ModuleNotFoundError: No module named 'bleach'
+INFO:     127.0.0.1:18057 - "POST /api/v1/meetings HTTP/1.1" 500 Internal Server Error
+2026-02-25 19:01:02 | INFO     | meetingai | 9d2ccd24 POST /api/v1/tasks -> 422 (2460.3ms)
+INFO:     127.0.0.1:18060 - "POST /api/v1/tasks HTTP/1.1" 422 Unprocessable Content
+2026-02-25 19:01:04 | INFO     | meetingai | d91ec745 GET /api/v1/tasks -> 200 (2440.1ms)
+INFO:     127.0.0.1:18060 - "GET /api/v1/tasks?limit=10 HTTP/1.1" 200 OK
+ 2026-02-25 19:01:52 | INFO     | meetingai | f0f43d0d POST /api/v1/register -> 201 (3743.0ms)
+INFO:     127.0.0.1:24173 - "POST /api/v1/register HTTP/1.1" 201 Created
+2026-02-25 19:01:52 | INFO     | meetingai | Application shutting down...
+2026-02-25 19:02:03 | WARNING  | meetingai | Prometheus client not installed, metrics disabled
+2026-02-25 19:02:03 | INFO     | meetingai | ==================================================
+2026-02-25 19:02:03 | INFO     | meetingai |   AI Meeting Intelligence System v2.1.0
+2026-02-25 19:02:03 | INFO     | meetingai |   Environment: dev
+2026-02-25 19:02:03 | INFO     | meetingai |   Database: postgresql+psycopg://neondb_ow...
+2026-02-25 19:02:03 | INFO     | meetingai |   Gemini Model: gemini-2.5-flash
+2026-02-25 19:02:03 | INFO     | meetingai |   AI: Enabled
+2026-02-25 19:02:03 | INFO     | meetingai |   FFmpeg: Detected (ffmpeg version 8.0.1-essentials_build-www.gyan.dev Copyright (c) 2000-2025 the FFmpeg developers)
+2026-02-25 19:02:03 | INFO     | meetingai | ==================================================
+2026-02-25 19:02:14 | INFO     | meetingai | Database tables created/verified
+2026-02-25 19:02:26 | INFO     | meetingai | 9d958e66 POST /api/v1/meetings -> 201 (11982.1ms)
+INFO:     127.0.0.1:24176 - "POST /api/v1/meetings HTTP/1.1" 201 Created
+2026-02-25 19:02:31 | INFO     | meetingai.tasks | User 17 created task 6
+2026-02-25 19:02:31 | INFO     | meetingai | bc36cd75 POST /api/v1/tasks -> 200 (5262.9ms)
+INFO:     127.0.0.1:24176 - "POST /api/v1/tasks HTTP/1.1" 200 OK
+2026-02-25 19:02:34 | INFO     | meetingai | fc465516 GET /api/v1/tasks -> 200 (2748.3ms)
+INFO:     127.0.0.1:24176 - "GET /api/v1/tasks?limit=10 HTTP/1.1" 200 OK
+2026-02-25 19:03:08 | INFO     | meetingai | 05ca6ddc GET /health -> 200 (15.7ms)
+INFO:     127.0.0.1:62584 - "GET /health HTTP/1.1" 200 OK
+2026-02-25 19:05:01 | INFO     | meetingai | abf17211 OPTIONS /api/v1/login -> 200 (4.7ms)
+INFO:     127.0.0.1:10900 - "OPTIONS /api/v1/login HTTP/1.1" 200 OK
+2026-02-25 19:05:03 | INFO     | meetingai.security | auth_login_success ip=127.0.0.1 user_id=1
+2026-02-25 19:05:03 | INFO     | meetingai | 24a2ca11 POST /api/v1/login -> 200 (2310.0ms)
+INFO:     127.0.0.1:10900 - "POST /api/v1/login HTTP/1.1" 200 OK
+2026-02-25 19:05:04 | INFO     | meetingai | 2ca44eda OPTIONS /api/v1/meetings/dashboard -> 200 (4.7ms)
+2026-02-25 19:05:04 | INFO     | meetingai | cbff7a15 OPTIONS /api/v1/meetings/dashboard -> 200 (7.6ms)
+INFO:     127.0.0.1:10900 - "OPTIONS /api/v1/meetings/dashboard HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54946 - "OPTIONS /api/v1/meetings/dashboard HTTP/1.1" 200 OK
+2026-02-25 19:05:07 | INFO     | meetingai | 3fe94a8d GET /api/v1/meetings/dashboard -> 200 (3560.7ms)
+INFO:     127.0.0.1:49178 - "GET /api/v1/meetings/dashboard HTTP/1.1" 200 OK
+2026-02-25 19:05:10 | INFO     | meetingai | 0e0dbddc GET /api/v1/meetings/dashboard -> 200 (2732.5ms)
+INFO:     127.0.0.1:49178 - "GET /api/v1/meetings/dashboard HTTP/1.1" 200 OK
+2026-02-25 19:05:10 | INFO     | meetingai | 5b6b4a88 OPTIONS /api/v1/meetings -> 200 (6.9ms)
+INFO:     127.0.0.1:49178 - "OPTIONS /api/v1/meetings HTTP/1.1" 200 OK
+2026-02-25 19:05:10 | INFO     | meetingai | 9bb4b78e OPTIONS /api/v1/meetings -> 200 (7.2ms)
+INFO:     127.0.0.1:61286 - "OPTIONS /api/v1/meetings HTTP/1.1" 200 OK
+2026-02-25 19:05:13 | INFO     | meetingai | 1d474218 GET /api/v1/meetings -> 200 (2775.4ms)
+INFO:     127.0.0.1:49178 - "GET /api/v1/meetings HTTP/1.1" 200 OK
+2026-02-25 19:05:15 | INFO     | meetingai | f1516845 GET /api/v1/meetings -> 200 (2232.7ms)
+INFO:     127.0.0.1:49178 - "GET /api/v1/meetings HTTP/1.1" 200 OK
+2026-02-25 19:05:18 | INFO     | meetingai | fe805baf OPTIONS /api/v1/tasks -> 200 (15.0ms)
+2026-02-25 19:05:18 | INFO     | meetingai | a75829ee OPTIONS /api/v1/meetings -> 200 (21.0ms)
+INFO:     127.0.0.1:49178 - "OPTIONS /api/v1/tasks?limit=200 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55413 - "OPTIONS /api/v1/meetings?limit=20 HTTP/1.1" 200 OK
+2026-02-25 19:05:18 | INFO     | meetingai | 754b6e13 OPTIONS /api/v1/meetings -> 200 (14.8ms)
+2026-02-25 19:05:18 | INFO     | meetingai | d4489554 OPTIONS /api/v1/tasks -> 200 (18.5ms)
+INFO:     127.0.0.1:25582 - "OPTIONS /api/v1/meetings?limit=20 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56390 - "OPTIONS /api/v1/tasks?limit=200 HTTP/1.1" 200 OK
+2026-02-25 19:05:21 | INFO     | meetingai | 41cf6a1b GET /api/v1/meetings -> 200 (2548.5ms)
+INFO:     127.0.0.1:49178 - "GET /api/v1/meetings?limit=20 HTTP/1.1" 200 OK
+2026-02-25 19:05:22 | INFO     | meetingai | 4a7714ff GET /api/v1/tasks -> 200 (4333.5ms)
+INFO:     127.0.0.1:51533 - "GET /api/v1/tasks?limit=200 HTTP/1.1" 200 OK
+2026-02-25 19:05:23 | INFO     | meetingai | 696468b0 GET /api/v1/meetings -> 200 (2091.3ms)
+INFO:     127.0.0.1:49178 - "GET /api/v1/meetings?limit=20 HTTP/1.1" 200 OK
+2026-02-25 19:05:25 | INFO     | meetingai | fc093659 GET /api/v1/tasks -> 200 (2754.7ms)
+INFO:     127.0.0.1:56390 - "GET /api/v1/tasks?limit=200 HTTP/1.1" 200 OK
+2026-02-25 19:05:27 | INFO     | meetingai | bc701b3c OPTIONS /api/v1/me -> 200 (3.2ms)
+INFO:     127.0.0.1:56390 - "OPTIONS /api/v1/me HTTP/1.1" 200 OK
+2026-02-25 19:05:27 | INFO     | meetingai | dbaa92e9 OPTIONS /api/v1/me -> 200 (5.3ms)
+INFO:     127.0.0.1:11953 - "OPTIONS /api/v1/me HTTP/1.1" 200 OK
+2026-02-25 19:05:28 | INFO     | meetingai | 6f6efb86 GET /api/v1/tasks -> 200 (2537.3ms)
+2026-02-25 19:05:29 | INFO     | meetingai | 23d04542 GET /api/v1/me -> 200 (1995.5ms)
+INFO:     127.0.0.1:47113 - "GET /api/v1/me HTTP/1.1" 200 OK
+2026-02-25 19:05:31 | INFO     | meetingai | 9427196c GET /api/v1/me -> 200 (2028.3ms)
+INFO:     127.0.0.1:47113 - "GET /api/v1/me HTTP/1.1" 200 OK
+2026-02-25 19:05:34 | INFO     | meetingai | ae9d55fd GET /api/v1/tasks -> 200 (2307.8ms)
+2026-02-25 19:05:34 | INFO     | meetingai | d197e1e1 GET /api/v1/meetings -> 200 (2306.4ms)
+INFO:     127.0.0.1:47113 - "GET /api/v1/tasks?limit=200 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:11953 - "GET /api/v1/meetings?limit=20 HTTP/1.1" 200 OK
+2026-02-25 19:05:37 | INFO     | meetingai | b86476ee GET /api/v1/tasks -> 200 (2425.1ms)
+2026-02-25 19:05:37 | INFO     | meetingai | 42678926 GET /api/v1/meetings -> 200 (2417.0ms)
+INFO:     127.0.0.1:59144 - "GET /api/v1/tasks?limit=200 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:11953 - "GET /api/v1/meetings?limit=20 HTTP/1.1" 200 OK
+2026-02-25 19:05:46 | INFO     | meetingai | 9445aff7 GET /api/v1/meetings -> 200 (2664.6ms)
+INFO:     127.0.0.1:19537 - "GET /api/v1/meetings HTTP/1.1" 200 OK
+2026-02-25 19:05:49 | INFO     | meetingai | b6beee35 GET /api/v1/meetings -> 200 (2331.4ms)
+INFO:     127.0.0.1:19537 - "GET /api/v1/meetings HTTP/1.1" 200 OK
+2026-02-25 19:05:49 | INFO     | meetingai | 0b0b19e2 GET /api/v1/tasks -> 200 (2243.9ms)
+INFO:     127.0.0.1:50967 - "GET /api/v1/tasks?limit=200 HTTP/1.1" 200 OK
+2026-02-25 19:05:51 | INFO     | meetingai | da6073d8 GET /api/v1/tasks -> 200 (2116.4ms)
+INFO:     127.0.0.1:50967 - "GET /api/v1/tasks?limit=200 HTTP/1.1" 200 OK
+2026-02-25 19:05:52 | INFO     | meetingai | 074a7b9b GET /api/v1/meetings/dashboard -> 200 (2525.9ms)
+INFO:     127.0.0.1:19537 - "GET /api/v1/meetings/dashboard HTTP/1.1" 200 OK
+2026-02-25 19:05:55 | INFO     | meetingai | b02394b2 GET /api/v1/meetings/dashboard -> 200 (3155.6ms)
+INFO:     127.0.0.1:19537 - "GET /api/v1/meetings/dashboard HTTP/1.1" 200 OK
+2026-02-25 19:05:55 | INFO     | meetingai | 7262ab67 GET /api/v1/tasks -> 200 (2637.6ms)
+INFO:     127.0.0.1:50967 - "GET /api/v1/tasks?limit=200 HTTP/1.1" 200 OK
+2026-02-25 19:05:58 | INFO     | meetingai | 2f8b4e79 GET /api/v1/tasks -> 200 (2323.9ms)
+INFO:     127.0.0.1:50967 - "GET /api/v1/tasks?limit=200 HTTP/1.1" 200 OK
+2026-02-25 19:07:38 | INFO     | meetingai | 8a6b8563 GET /api/v1/meetings -> 200 (4486.8ms)
+INFO:     127.0.0.1:17875 - "GET /api/v1/meetings HTTP/1.1" 200 OK
+2026-02-25 19:07:40 | INFO     | meetingai | 6e569140 GET /api/v1/meetings -> 200 (2020.7ms)
+INFO:     127.0.0.1:17875 - "GET /api/v1/meetings HTTP/1.1" 200 OK
+2026-02-25 19:07:40 | INFO     | meetingai | d0969658 OPTIONS /api/v1/meetings -> 200 (1.8ms)
+INFO:     127.0.0.1:17875 - "OPTIONS /api/v1/meetings?status=analyzed HTTP/1.1" 200 OK
+2026-02-25 19:07:43 | INFO     | meetingai | af6d5ca1 OPTIONS /api/v1/meetings -> 200 (2.9ms)
+INFO:     127.0.0.1:1104 - "OPTIONS /api/v1/meetings?status=pending HTTP/1.1" 200 OK
+2026-02-25 19:07:43 | INFO     | meetingai | 8bb70b22 GET /api/v1/meetings -> 200 (2776.0ms)
+INFO:     127.0.0.1:17875 - "GET /api/v1/meetings?status=analyzed HTTP/1.1" 200 OK
+2026-02-25 19:07:46 | INFO     | meetingai | 672e05e9 GET /api/v1/meetings -> 200 (2540.2ms)
+INFO:     127.0.0.1:1104 - "GET /api/v1/meetings?status=pending HTTP/1.1" 200 OK
+2026-02-25 19:07:58 | INFO     | meetingai | 9fc7074e OPTIONS /api/v1/meetings -> 200 (3.4ms)
+INFO:     127.0.0.1:58531 - "OPTIONS /api/v1/meetings?search=e HTTP/1.1" 200 OK
+2026-02-25 19:07:58 | INFO     | meetingai | 84722c62 OPTIONS /api/v1/meetings -> 200 (6.6ms)
+INFO:     127.0.0.1:9299 - "OPTIONS /api/v1/meetings?search=ex HTTP/1.1" 200 OK
+2026-02-25 19:07:58 | INFO     | meetingai | 1a6de949 OPTIONS /api/v1/meetings -> 200 (2.5ms)
+INFO:     127.0.0.1:9299 - "OPTIONS /api/v1/meetings?search=exa HTTP/1.1" 200 OK
+2026-02-25 19:07:59 | INFO     | meetingai | 58c5f4a2 OPTIONS /api/v1/meetings -> 200 (2.4ms)
+INFO:     127.0.0.1:43961 - "OPTIONS /api/v1/meetings?search=exam HTTP/1.1" 200 OK
+2026-02-25 19:08:00 | INFO     | meetingai | a0b9baf6 OPTIONS /api/v1/meetings -> 200 (2.9ms)
+INFO:     127.0.0.1:43961 - "OPTIONS /api/v1/meetings?search=examp HTTP/1.1" 200 OK
+2026-02-25 19:08:00 | INFO     | meetingai | ae06809e OPTIONS /api/v1/meetings -> 200 (7.8ms)
+INFO:     127.0.0.1:1393 - "OPTIONS /api/v1/meetings?search=exampl HTTP/1.1" 200 OK
+2026-02-25 19:08:01 | INFO     | meetingai | 7d3d3623 GET /api/v1/meetings -> 200 (2501.5ms)
+INFO:     127.0.0.1:32016 - "GET /api/v1/meetings?search=ex HTTP/1.1" 200 OK
+2026-02-25 19:08:01 | INFO     | meetingai | 1e552ba9 GET /api/v1/meetings -> 200 (2899.6ms)
+INFO:     127.0.0.1:58531 - "GET /api/v1/meetings?search=e HTTP/1.1" 200 OK
+2026-02-25 19:08:01 | INFO     | meetingai | 745b5e55 OPTIONS /api/v1/meetings -> 200 (6.2ms)
+INFO:     127.0.0.1:32016 - "OPTIONS /api/v1/meetings?search=example HTTP/1.1" 200 OK
+2026-02-25 19:08:04 | INFO     | meetingai | 2b2cdabc GET /api/v1/meetings -> 200 (3078.3ms)
+2026-02-25 19:08:04 | INFO     | meetingai | c53ff6f2 GET /api/v1/meetings -> 200 (5344.7ms)
+INFO:     127.0.0.1:58531 - "GET /api/v1/meetings?search=example HTTP/1.1" 200 OK
+INFO:     127.0.0.1:9299 - "GET /api/v1/meetings?search=exa HTTP/1.1" 200 OK
+2026-02-25 19:08:05 | INFO     | meetingai | d0adca8f GET /api/v1/meetings -> 200 (4917.4ms)
+INFO:     127.0.0.1:43961 - "GET /api/v1/meetings?search=examp HTTP/1.1" 200 OK
+2026-02-25 19:08:05 | INFO     | meetingai | 43b9bae8 GET /api/v1/meetings -> 200 (5120.0ms)
+INFO:     127.0.0.1:60788 - "GET /api/v1/meetings?search=exam HTTP/1.1" 200 OK
+2026-02-25 19:08:05 | INFO     | meetingai | fa1f220a GET /api/v1/meetings -> 200 (4953.1ms)
+INFO:     127.0.0.1:1393 - "GET /api/v1/meetings?search=exampl HTTP/1.1" 200 OK
+2026-02-25 19:08:17 | INFO     | meetingai | 9fde9d6c GET /api/v1/meetings -> 200 (2196.2ms)
+INFO:     127.0.0.1:38752 - "GET /api/v1/meetings HTTP/1.1" 200 OK
+2026-02-25 19:08:18 | INFO     | meetingai | a5a4896c OPTIONS /api/v1/meetings -> 200 (7.5ms)
+INFO:     127.0.0.1:38752 - "OPTIONS /api/v1/meetings?search=v HTTP/1.1" 200 OK
+2026-02-25 19:08:18 | INFO     | meetingai | 8ebd27c1 OPTIONS /api/v1/meetings -> 200 (2.5ms)
+INFO:     127.0.0.1:20191 - "OPTIONS /api/v1/meetings?search=vi HTTP/1.1" 200 OK
+2026-02-25 19:08:18 | INFO     | meetingai | 7dc99700 OPTIONS /api/v1/meetings -> 200 (2.6ms)
+INFO:     127.0.0.1:20191 - "OPTIONS /api/v1/meetings?search=vid HTTP/1.1" 200 OK
+2026-02-25 19:08:19 | INFO     | meetingai | acf8dd36 OPTIONS /api/v1/meetings -> 200 (1.3ms)
+INFO:     127.0.0.1:39603 - "OPTIONS /api/v1/meetings?search=vide HTTP/1.1" 200 OK
+2026-02-25 19:08:19 | INFO     | meetingai | 279670a4 OPTIONS /api/v1/meetings -> 200 (5.9ms)
+INFO:     127.0.0.1:9519 - "OPTIONS /api/v1/meetings?search=video HTTP/1.1" 200 OK
+2026-02-25 19:08:20 | INFO     | meetingai | f0d2d7ff GET /api/v1/meetings -> 200 (1888.6ms)
+INFO:     127.0.0.1:38752 - "GET /api/v1/meetings?search=v HTTP/1.1" 200 OK
+2026-02-25 19:08:20 | INFO     | meetingai | 443fce7a GET /api/v1/meetings -> 200 (2219.7ms)
+INFO:     127.0.0.1:60669 - "GET /api/v1/meetings?search=vi HTTP/1.1" 200 OK
+2026-02-25 19:08:21 | INFO     | meetingai | ccaf9486 GET /api/v1/meetings -> 200 (2179.6ms)
+INFO:     127.0.0.1:20191 - "GET /api/v1/meetings?search=vid HTTP/1.1" 200 OK
+2026-02-25 19:08:21 | INFO     | meetingai | c2b38b34 GET /api/v1/meetings -> 200 (2176.1ms)
+INFO:     127.0.0.1:9519 - "GET /api/v1/meetings?search=video HTTP/1.1" 200 OK
+2026-02-25 19:08:21 | INFO     | meetingai | 94b2dee0 GET /api/v1/meetings -> 200 (2335.6ms)
+INFO:     127.0.0.1:39603 - "GET /api/v1/meetings?search=vide HTTP/1.1" 200 OK
+2026-02-25 19:08:23 | INFO     | meetingai | 548bedfd OPTIONS /api/v1/meetings -> 200 (3.8ms)
+INFO:     127.0.0.1:39603 - "OPTIONS /api/v1/meetings?search=video+ HTTP/1.1" 200 OK
+2026-02-25 19:08:25 | INFO     | meetingai | 0a09e26c GET /api/v1/meetings -> 200 (2364.8ms)
+INFO:     127.0.0.1:9519 - "GET /api/v1/meetings?search=video+ HTTP/1.1" 200 OK
+2026-02-25 19:08:29 | INFO     | meetingai | b121a7fb GET /api/v1/tasks -> 200 (2210.1ms)
+INFO:     127.0.0.1:9519 - "GET /api/v1/tasks?limit=200 HTTP/1.1" 200 OK
+2026-02-25 19:08:29 | INFO     | meetingai | c5a44487 GET /api/v1/meetings -> 200 (2550.3ms)
+INFO:     127.0.0.1:39603 - "GET /api/v1/meetings?limit=20 HTTP/1.1" 200 OK
+2026-02-25 19:08:32 | INFO     | meetingai | 77e0488a GET /api/v1/tasks -> 200 (2573.9ms)
+INFO:     127.0.0.1:15444 - "GET /api/v1/tasks?limit=200 HTTP/1.1" 200 OK
+2026-02-25 19:08:32 | INFO     | meetingai | abe6e763 GET /api/v1/meetings -> 200 (2533.0ms)
+INFO:     127.0.0.1:39603 - "GET /api/v1/meetings?limit=20 HTTP/1.1" 200 OK
+2026-02-25 19:08:34 | INFO     | meetingai | bf90a937 GET /api/v1/tasks -> 200 (2486.8ms)
+INFO:     127.0.0.1:9519 - "GET /api/v1/tasks?limit=200 HTTP/1.1" 200 OK
+2026-02-25 19:08:37 | INFO     | meetingai | 0d972723 GET /api/v1/tasks -> 200 (3150.8ms)
+INFO:     127.0.0.1:9519 - "GET /api/v1/tasks?limit=200 HTTP/1.1" 200 OK
+2026-02-25 19:10:53 | INFO     | meetingai | 37358b4e GET /api/v1/meetings/dashboard -> 200 (6025.7ms)
+INFO:     127.0.0.1:40227 - "GET /api/v1/meetings/dashboard HTTP/1.1" 200 OK
+2026-02-25 19:10:57 | INFO     | meetingai | df863cfb GET /api/v1/meetings/dashboard -> 200 (3574.4ms)
+INFO:     127.0.0.1:40227 - "GET /api/v1/meetings/dashboard HTTP/1.1" 200 OK
+2026-02-25 19:10:58 | INFO     | meetingai | 51aa5591 GET /api/v1/meetings -> 200 (2772.7ms)
+INFO:     127.0.0.1:64589 - "GET /api/v1/meetings HTTP/1.1" 200 OK
+2026-02-25 19:11:00 | INFO     | meetingai | c28610c8 GET /api/v1/meetings -> 200 (2269.7ms)
+INFO:     127.0.0.1:64589 - "GET /api/v1/meetings HTTP/1.1" 200 OK
+ 2026-02-25 19:11:22 | INFO     | meetingai | a33803b4 OPTIONS /api/v1/meetings/42 -> 200 (4.4ms)
+INFO:     127.0.0.1:38064 - "OPTIONS /api/v1/meetings/42 HTTP/1.1" 200 OK
+2026-02-25 19:11:22 | INFO     | meetingai | e005c606 OPTIONS /api/v1/meetings/42 -> 200 (12.9ms)
+INFO:     127.0.0.1:13394 - "OPTIONS /api/v1/meetings/42 HTTP/1.1" 200 OK
+2026-02-25 19:11:25 | INFO     | meetingai | 67358b0f GET /health -> 200 (9.0ms)
+INFO:     127.0.0.1:49624 - "GET /health HTTP/1.1" 200 OK
+2026-02-25 19:11:28 | INFO     | meetingai | 908fb37d GET /api/v1/meetings/42 -> 200 (6061.4ms)
+INFO:     127.0.0.1:49622 - "GET /api/v1/meetings/42 HTTP/1.1" 200 OK
+2026-02-25 19:11:28 | INFO     | meetingai | Application shutting down...
+2026-02-25 19:11:48 | WARNING  | meetingai | Prometheus client not installed, metrics disabled
+2026-02-25 19:11:48 | INFO     | meetingai | ==================================================
+2026-02-25 19:11:48 | INFO     | meetingai |   AI Meeting Intelligence System v2.1.0
+2026-02-25 19:11:48 | INFO     | meetingai |   Environment: dev
+2026-02-25 19:11:48 | INFO     | meetingai |   Database: postgresql+psycopg://neondb_ow...
+2026-02-25 19:11:48 | INFO     | meetingai |   Gemini Model: gemini-2.5-flash
+2026-02-25 19:11:48 | INFO     | meetingai |   AI: Enabled
+2026-02-25 19:11:49 | INFO     | meetingai |   FFmpeg: Detected (ffmpeg version 8.0.1-essentials_build-www.gyan.dev Copyright (c) 2000-2025 the FFmpeg developers)
+2026-02-25 19:11:49 | INFO     | meetingai | ==================================================
+2026-02-25 19:12:01 | INFO     | meetingai | Database tables created/verified
+2026-02-25 19:12:01 | INFO     | meetingai | 856e6e25 OPTIONS /api/v1/ai/42/results -> 200 (49.5ms)
+INFO:     127.0.0.1:57304 - "OPTIONS /api/v1/ai/42/results HTTP/1.1" 200 OK
+2026-02-25 19:12:10 | INFO     | meetingai | 463f8ddd GET /api/v1/ai/42/results -> 200 (8650.2ms)
+INFO:     127.0.0.1:57304 - "GET /api/v1/ai/42/results HTTP/1.1" 200 OK
+2026-02-25 19:12:12 | INFO     | meetingai | 64e25c4b GET /api/v1/meetings/42 -> 200 (11077.7ms)
+INFO:     127.0.0.1:62173 - "GET /api/v1/meetings/42 HTTP/1.1" 200 OK
+2026-02-25 19:12:15 | INFO     | meetingai | 2e524ad6 GET /api/v1/ai/42/results -> 200 (2853.5ms)
+INFO:     127.0.0.1:62173 - "GET /api/v1/ai/42/results HTTP/1.1" 200 OK
+2026-02-25 19:12:34 | INFO     | meetingai | df2b234f GET /health -> 200 (15.0ms)
+INFO:     127.0.0.1:3658 - "GET /health HTTP/1.1" 200 OK
+2026-02-25 19:12:48 | INFO     | meetingai | 36eb1d67 POST /api/v1/register -> 201 (5539.8ms)
+INFO:     127.0.0.1:3664 - "POST /api/v1/register HTTP/1.1" 201 Created
+2026-02-25 19:12:51 | INFO     | meetingai | 3279c033 GET /api/v1/meetings/dashboard -> 200 (3094.7ms)
+INFO:     127.0.0.1:3664 - "GET /api/v1/meetings/dashboard HTTP/1.1" 200 OK
+2026-02-25 19:12:54 | INFO     | meetingai | 88745b7b GET /api/v1/tasks -> 200 (3070.6ms)
+INFO:     127.0.0.1:3664 - "GET /api/v1/tasks?limit=200 HTTP/1.1" 200 OK
+2026-02-25 19:13:32 | INFO     | meetingai | 0ce28747 GET /api/v1/meetings -> 200 (2694.1ms)
+2026-02-25 19:13:34 | INFO     | meetingai | f9d0a6ee GET /api/v1/me -> 200 (2682.4ms)
+INFO:     127.0.0.1:58242 - "GET /api/v1/me HTTP/1.1" 200 OK
+2026-02-25 19:13:35 | INFO     | meetingai | f0a3ce8b GET /api/v1/meetings -> 200 (3108.3ms)
+2026-02-25 19:13:37 | INFO     | meetingai | 04ad18a1 GET /api/v1/me -> 200 (2397.6ms)
+INFO:     127.0.0.1:58242 - "GET /api/v1/me HTTP/1.1" 200 OK
+2026-02-25 19:13:40 | INFO     | meetingai | 15f31cd8 GET /api/v1/meetings -> 200 (3162.8ms)
+INFO:     127.0.0.1:58242 - "GET /api/v1/meetings HTTP/1.1" 200 OK
+2026-02-25 19:13:43 | INFO     | meetingai | e990e9e1 GET /api/v1/meetings -> 200 (3016.3ms)
+INFO:     127.0.0.1:58242 - "GET /api/v1/meetings HTTP/1.1" 200 OK
+2026-02-25 19:13:48 | INFO     | meetingai | ee8e0d99 GET /api/v1/meetings/dashboard -> 200 (3582.7ms)
+INFO:     127.0.0.1:58242 - "GET /api/v1/meetings/dashboard HTTP/1.1" 200 OK
+2026-02-25 19:13:51 | INFO     | meetingai | bac89af7 GET /api/v1/meetings/dashboard -> 200 (2850.1ms)
+INFO:     127.0.0.1:58242 - "GET /api/v1/meetings/dashboard HTTP/1.1" 200 OK
+2026-02-25 19:13:58 | INFO     | meetingai | cea53c9e GET /api/v1/tasks -> 200 (2669.1ms)
+2026-02-25 19:13:58 | INFO     | meetingai | 729f141e GET /api/v1/meetings -> 200 (2662.2ms)
+INFO:     127.0.0.1:58242 - "GET /api/v1/tasks?limit=200 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41172 - "GET /api/v1/meetings?limit=20 HTTP/1.1" 200 OK
+2026-02-25 19:14:01 | INFO     | meetingai | 39ec91ff GET /api/v1/tasks -> 200 (2832.5ms)
+2026-02-25 19:14:01 | INFO     | meetingai | f77356f6 GET /api/v1/meetings -> 200 (2827.1ms)
+INFO:     127.0.0.1:65074 - "GET /api/v1/tasks?limit=200 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41172 - "GET /api/v1/meetings?limit=20 HTTP/1.1" 200 OK
+2026-02-25 19:14:16 | INFO     | meetingai | ab559005 GET /api/v1/meetings -> 200 (2773.7ms)
+INFO:     127.0.0.1:62447 - "GET /api/v1/meetings?status=analyzed HTTP/1.1" 200 OK
+2026-02-25 19:14:17 | INFO     | meetingai | 09d321ec GET /api/v1/meetings -> 200 (2736.8ms)
+INFO:     127.0.0.1:28542 - "GET /api/v1/meetings?status=pending HTTP/1.1" 200 OK
+2026-02-25 19:14:21 | INFO     | meetingai | 9607c054 GET /api/v1/meetings -> 200 (2467.1ms)
+INFO:     127.0.0.1:28542 - "GET /api/v1/meetings HTTP/1.1" 200 OK
+2026-02-25 19:14:43 | INFO     | meetingai | 77aca14a GET /api/v1/meetings/dashboard -> 200 (2776.1ms)
+INFO:     127.0.0.1:44617 - "GET /api/v1/meetings/dashboard HTTP/1.1" 200 OK
+2026-02-25 19:14:46 | INFO     | meetingai | 6d138bbb GET /api/v1/meetings/dashboard -> 200 (2725.7ms)
+INFO:     127.0.0.1:44617 - "GET /api/v1/meetings/dashboard HTTP/1.1" 200 OK

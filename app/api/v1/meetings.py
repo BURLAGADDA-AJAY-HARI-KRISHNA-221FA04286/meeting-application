@@ -5,6 +5,7 @@ import logging
 import os
 import tempfile
 import asyncio
+from urllib.parse import quote
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File, Form, status, Response, Request
 from sqlalchemy import func, select, desc
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -78,6 +79,29 @@ async def _enrich_meeting(db: AsyncSession, meeting: Meeting, include_analysis: 
             data["sentiment"] = ai_result.sentiment_json
 
     return data
+
+
+def _sanitize_filename(filename: str | None, default: str = "download.txt") -> str:
+    if not filename:
+        filename = default
+    cleaned = "".join(
+        ch for ch in filename
+        if ch not in '<>:"/\\|?*' and ord(ch) >= 32
+    ).strip().lstrip(".")
+    cleaned = cleaned or default
+    return cleaned[:180]
+
+
+def _build_meeting_filename(title: str | None, suffix: str) -> str:
+    base = (title or "meeting").strip().replace(" ", "_").replace("/", "_")
+    base = _sanitize_filename(base, "meeting")
+    return f"{base[:80]}_{suffix}.txt"
+
+
+def _content_disposition(filename: str) -> str:
+    safe = _sanitize_filename(filename)
+    encoded = quote(safe)
+    return f"attachment; filename=\"{safe}\"; filename*=UTF-8''{encoded}"
 
 
 from app.core.security import sanitize_input
@@ -406,6 +430,27 @@ ALLOWED_MEDIA_TYPES = {
 MAX_FILE_SIZE = 100 * 1024 * 1024  # 100 MB
 
 
+def _matches_media_magic(content_type: str, chunk: bytes) -> bool:
+    """Best-effort magic-byte validation for common audio/video upload types."""
+    if not chunk:
+        return False
+    ct = (content_type or "").lower()
+
+    if ct in {"video/mp4", "audio/mp4", "audio/x-m4a", "audio/m4a", "video/quicktime"}:
+        # ISO Base Media File Format (mp4/m4a/mov): bytes 4..7 are usually "ftyp".
+        return len(chunk) >= 12 and chunk[4:8] == b"ftyp"
+    if ct in {"video/webm", "audio/webm", "video/x-matroska"}:
+        # EBML header for WebM / Matroska.
+        return chunk.startswith(b"\x1a\x45\xdf\xa3")
+    if ct in {"audio/wav", "audio/x-wav"}:
+        return len(chunk) >= 12 and chunk.startswith(b"RIFF") and chunk[8:12] == b"WAVE"
+    if ct == "audio/ogg":
+        return chunk.startswith(b"OggS")
+    if ct in {"audio/mpeg", "audio/mp3"}:
+        return chunk.startswith(b"ID3") or (len(chunk) >= 2 and chunk[0] == 0xFF and (chunk[1] & 0xE0) == 0xE0)
+    return True
+
+
 def _transcribe_with_gemini(file_path: str, mime_type: str) -> str:
     """Use Gemini to transcribe audio/video file (sync, runs in thread)."""
     from google import genai
@@ -465,19 +510,31 @@ async def upload_media(
             detail=f"Unsupported file type: {content_type}. Allowed: mp4, webm, mp3, wav, m4a, ogg"
         )
 
-    # Read file with size check
-    contents = await file.read()
-    if len(contents) > MAX_FILE_SIZE:
-        raise HTTPException(status_code=400, detail="File too large. Max 100 MB.")
-
-    if len(contents) < 1000:
-        raise HTTPException(status_code=400, detail="File too small or empty.")
-
-    # Write to temp file for Gemini upload
+    # Stream file to disk with size check to avoid loading large files in memory.
     ext = os.path.splitext(file.filename or "upload.mp4")[1] or ".mp4"
     tmp = tempfile.NamedTemporaryFile(delete=False, suffix=ext)
+    total_size = 0
+    first_chunk_checked = False
     try:
-        tmp.write(contents)
+        while True:
+            chunk = await file.read(1024 * 1024)  # 1MB chunks
+            if not chunk:
+                break
+            if not first_chunk_checked:
+                if not _matches_media_magic(content_type, chunk):
+                    raise HTTPException(
+                        status_code=400,
+                        detail="Uploaded file content does not match the declared media type.",
+                    )
+                first_chunk_checked = True
+            total_size += len(chunk)
+            if total_size > MAX_FILE_SIZE:
+                raise HTTPException(status_code=400, detail="File too large. Max 100 MB.")
+            tmp.write(chunk)
+
+        if total_size < 1000:
+            raise HTTPException(status_code=400, detail="File too small or empty.")
+
         tmp.flush()
         tmp.close()
 
@@ -489,7 +546,7 @@ async def upload_media(
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         logger.error("Media transcription failed: %s", e, exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Transcription failed: {e}")
+        raise HTTPException(status_code=500, detail="Transcription failed. Please try again.")
     finally:
         try:
             os.unlink(tmp.name)
@@ -716,14 +773,13 @@ async def download_report(
     lines.append(divider)
 
     content = "\n".join(lines)
-    safe_title = meeting.title.replace(" ", "_").replace("/", "_")[:50] if meeting.title else "meeting"
-    filename = f"{safe_title}_report.txt"
+    filename = _build_meeting_filename(meeting.title, "report")
 
     return Response(
         content=content,
         media_type="text/plain",
         headers={
-            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Content-Disposition": _content_disposition(filename),
             "Cache-Control": "no-cache",
         },
     )
@@ -747,14 +803,13 @@ async def download_transcript(
     if not transcript:
         raise HTTPException(status_code=404, detail="No transcript available for this meeting")
 
-    safe_title = meeting.title.replace(" ", "_").replace("/", "_")[:50] if meeting.title else "meeting"
-    filename = f"{safe_title}_transcript.txt"
+    filename = _build_meeting_filename(meeting.title, "transcript")
 
     return Response(
         content=transcript,
         media_type="text/plain",
         headers={
-            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Content-Disposition": _content_disposition(filename),
             "Cache-Control": "no-cache",
         },
     )
@@ -772,14 +827,14 @@ async def download_file(
 
     body = await request.json()
     content = body.get("content", "")
-    filename = body.get("filename", "download.txt")
+    filename = _sanitize_filename(body.get("filename", "download.txt"))
     mime_type = body.get("mime_type", "text/plain")
 
     return Response(
         content=content,
         media_type=mime_type,
         headers={
-            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Content-Disposition": _content_disposition(filename),
             "Cache-Control": "no-cache",
         },
     )

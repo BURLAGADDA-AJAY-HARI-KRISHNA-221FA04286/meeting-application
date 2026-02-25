@@ -1,24 +1,66 @@
-import { lazy, Suspense } from 'react';
+import { lazy, Suspense, useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, Outlet, useLocation, useParams } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import './pages/Mobile.css';
 
-/* ── Lazy-loaded pages (code-split at route level) ── */
-const Layout = lazy(() => import('./components/Layout'));
-const LoginPage = lazy(() => import('./pages/LoginPage'));
-const RegisterPage = lazy(() => import('./pages/RegisterPage'));
-const DashboardPage = lazy(() => import('./pages/DashboardPage'));
-const MeetingsPage = lazy(() => import('./pages/MeetingsPage'));
-const NewMeetingPage = lazy(() => import('./pages/NewMeetingPage'));
-const MeetingDetailPage = lazy(() => import('./pages/MeetingDetailPage'));
-const TaskBoardPage = lazy(() => import('./pages/TaskBoardPage'));
-const SettingsPage = lazy(() => import('./pages/SettingsPage'));
-const VideoMeetingPage = lazy(() => import('./pages/VideoMeetingPage'));
-const LiveMeetingPage = lazy(() => import('./pages/LiveMeetingPage'));
-const JoinMeetingPage = lazy(() => import('./pages/JoinMeetingPage'));
+// ── Eager imports: core pages load with the main bundle (zero chunk delay) ──
+import Layout from './components/Layout';
+import DashboardPage from './pages/DashboardPage';
+import MeetingsPage from './pages/MeetingsPage';
+import TaskBoardPage from './pages/TaskBoardPage';
+import SettingsPage from './pages/SettingsPage';
 
-/* ── Minimal full-screen loading spinner ── */
+// ── Lazy imports: heavy/infrequent pages load on demand ──
+function lazyWithPreload(loader) {
+  const Component = lazy(loader);
+  Component.preload = loader;
+  return Component;
+}
+
+const LoginPage = lazyWithPreload(() => import('./pages/LoginPage'));
+const RegisterPage = lazyWithPreload(() => import('./pages/RegisterPage'));
+const NewMeetingPage = lazyWithPreload(() => import('./pages/NewMeetingPage'));
+const MeetingDetailPage = lazyWithPreload(() => import('./pages/MeetingDetailPage'));
+const VideoMeetingPage = lazyWithPreload(() => import('./pages/VideoMeetingPage'));
+const LiveMeetingPage = lazyWithPreload(() => import('./pages/LiveMeetingPage'));
+const JoinMeetingPage = lazyWithPreload(() => import('./pages/JoinMeetingPage'));
+
+function RouteWarmup() {
+  const { user } = useAuth();
+  const location = useLocation();
+
+  useEffect(() => {
+    if (!user) return;
+
+    // Preload secondary pages after initial render
+    const preloadSecondary = () => {
+      NewMeetingPage.preload?.();
+      MeetingDetailPage.preload?.();
+    };
+
+    if ('requestIdleCallback' in window) {
+      const id = window.requestIdleCallback(preloadSecondary, { timeout: 1000 });
+      return () => window.cancelIdleCallback(id);
+    }
+
+    const t = window.setTimeout(preloadSecondary, 200);
+    return () => window.clearTimeout(t);
+  }, [user]);
+
+  // Preload detail page when browsing meetings
+  useEffect(() => {
+    if (!user) return;
+    if (location.pathname.startsWith('/meetings')) {
+      MeetingDetailPage.preload?.();
+      VideoMeetingPage.preload?.();
+      LiveMeetingPage.preload?.();
+    }
+  }, [location.pathname, user]);
+
+  return null;
+}
+
 function PageLoader() {
   return (
     <div style={{
@@ -55,6 +97,8 @@ export default function App() {
   return (
     <BrowserRouter>
       <AuthProvider>
+        <RouteWarmup />
+
         <Toaster
           position="top-right"
           toastOptions={{
@@ -73,13 +117,11 @@ export default function App() {
 
         <Suspense fallback={<PageLoader />}>
           <Routes>
-            {/* Public routes */}
             <Route element={<PublicRoute />}>
               <Route path="/login" element={<LoginPage />} />
               <Route path="/register" element={<RegisterPage />} />
             </Route>
 
-            {/* Private routes */}
             <Route element={<PrivateRoute />}>
               <Route element={<Layout />}>
                 <Route path="/dashboard" element={<DashboardPage />} />
@@ -93,11 +135,8 @@ export default function App() {
               <Route path="/join/:roomId" element={<JoinRedirect />} />
               <Route path="/meetings/room/:roomId" element={<VideoMeetingPage />} />
               <Route path="/meetings/:id/live" element={<LiveMeetingPage />} />
-
-              {/* Join meeting (easy access) */}
               <Route path="/join" element={<JoinMeetingPage />} />
 
-              {/* Legacy redirects */}
               <Route path="/video-meeting" element={<Navigate to="/meetings/new" replace />} />
               <Route path="/video-meeting/:roomId" element={<Navigate to="/meetings/new" replace />} />
               <Route path="/meetings/live" element={<Navigate to="/meetings/new" replace />} />

@@ -25,6 +25,7 @@ from app.models.meeting import Meeting
 from app.models.subtitle import Subtitle
 from app.models.user import User
 from app.core.security import decode_token, sanitize_input
+from app.core.token_revocation import is_jti_revoked
 # Lazy import for speech processor to avoid heavy load at startup
 from app.ai.speech_service import get_speech_processor
 
@@ -42,6 +43,12 @@ async def websocket_endpoint(
 
     # ── 1. Authenticate via query param ───────────────
     token = websocket.query_params.get("token")
+    if not token:
+        protocol_header = websocket.headers.get("sec-websocket-protocol", "")
+        protocols = [v.strip() for v in protocol_header.split(",") if v.strip()]
+        # Expected protocols: ["bearer", "<jwt>"]
+        if len(protocols) >= 2 and protocols[0].lower() == "bearer":
+            token = protocols[1]
     user_id = None
 
     try:
@@ -52,6 +59,8 @@ async def websocket_endpoint(
 
         # Decode token (CPU bound, but fast enough)
         payload = decode_token(token)
+        if await is_jti_revoked(db, payload.get("jti")):
+            raise ValueError("Token has been revoked")
         user_id = int(payload.get("sub"))
         
         if not user_id:
@@ -70,8 +79,6 @@ async def websocket_endpoint(
         logger.warning("WebSocket: meeting %d not found", meeting_id)
         await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
         return
-
-    # ── 3. Connect ────────────────────────────────────
 
     # ── 3. Connect ────────────────────────────────────
     
@@ -188,14 +195,9 @@ async def websocket_endpoint(
                 is_admin = user_role in ['host', 'presenter']
 
                 if event_type == "ADMIN_UPDATE" and user_role == 'host':
-                    # Update meeting settings
+                    # Update meeting settings (stored in-memory via manager)
                     updates = event.get("settings", {})
                     manager.update_settings(meeting_id, updates)
-                    
-                    # Store password in DB if provided (simplified)
-                    if 'password' in updates and updates['password']:
-                        meeting.password_hash = updates['password'] # Ideally hash this
-                        await db.commit()
                     
                     await manager.broadcast(meeting_id, {
                         "type": "SETTINGS_UPDATE",
@@ -324,9 +326,9 @@ async def websocket_endpoint(
                             logger.error("Audio processing failed: %s", audio_err)
 
                 # ── Browser-based transcription (Web Speech API) ──
-                elif event_type == "TRANSCRIPTION":
+                elif event_type in {"TRANSCRIPTION", "SUBTITLE"}:
                     text = sanitize_input(event.get("text", "").strip())
-                    speaker = event.get("speaker", "Speaker")
+                    speaker = sanitize_input(event.get("speaker", "Speaker"))
                     confidence = event.get("confidence", 0.9)
                     
                     if text:

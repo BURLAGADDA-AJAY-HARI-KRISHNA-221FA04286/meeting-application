@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { ThumbsUp, Send, Trash2, User, CircleHelp } from 'lucide-react';
 
-export default function QAPanel({ ws, questions, isHost, onAsk, onUpvote, onDelete }) {
+export default function QAPanel({ questions, isHost, onAsk, onUpvote, onDelete }) {
     const [questionText, setQuestionText] = useState('');
     const [isAnonymous, setIsAnonymous] = useState(false);
 

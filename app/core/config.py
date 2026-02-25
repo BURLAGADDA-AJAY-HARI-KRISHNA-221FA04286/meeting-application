@@ -16,10 +16,12 @@ class Settings(BaseSettings):
     secret_key: str = "change-me-in-production"
     access_token_expire_minutes: int = 360
     refresh_token_expire_minutes: int = 10080  # 7 days
+    password_reset_token_expire_minutes: int = 30
     algorithm: str = "HS256"
 
     # ── Database ───────────────────────────────────────
     database_url: str = "sqlite:///./meeting_intel.db"
+    db_ssl_verify: bool = False
 
     # ── AI / Gemini ────────────────────────────────────
     gemini_api_key: str = ""
@@ -29,13 +31,23 @@ class Settings(BaseSettings):
 
     # ── CORS ───────────────────────────────────────────
     cors_origins: str = "http://localhost:3000,http://localhost:5173,http://localhost:5174"
+    cors_allow_methods: str = "GET,POST,PUT,PATCH,DELETE,OPTIONS"
+    cors_allow_headers: str = "Authorization,Content-Type,Accept,Origin"
+    trusted_hosts: str = "localhost,127.0.0.1,testserver"
 
     # ── Rate Limiting ──────────────────────────────────
     rate_limit_per_minute: int = 60
+    allow_query_token_auth: bool = False
+    login_max_attempts: int = 5
+    login_lock_minutes: int = 15
 
     # ── External Services ──────────────────────────────
     hf_api_key: str | None = None
     github_token: str | None = None
+    jira_base_url: str | None = None
+    jira_project_key: str | None = None
+    jira_email: str | None = None
+    jira_api_token: str | None = None
 
     # ── RAG Settings ───────────────────────────────────
     rag_chunk_size: int = 3        # Combine N subtitles into one chunk
@@ -63,6 +75,18 @@ class Settings(BaseSettings):
     @property
     def cors_origins_list(self) -> list[str]:
         return [v.strip() for v in self.cors_origins.split(",") if v.strip()]
+
+    @property
+    def cors_allow_methods_list(self) -> list[str]:
+        return [v.strip().upper() for v in self.cors_allow_methods.split(",") if v.strip()]
+
+    @property
+    def cors_allow_headers_list(self) -> list[str]:
+        return [v.strip() for v in self.cors_allow_headers.split(",") if v.strip()]
+
+    @property
+    def trusted_hosts_list(self) -> list[str]:
+        return [v.strip() for v in self.trusted_hosts.split(",") if v.strip()]
 
     @property
     def is_production(self) -> bool:

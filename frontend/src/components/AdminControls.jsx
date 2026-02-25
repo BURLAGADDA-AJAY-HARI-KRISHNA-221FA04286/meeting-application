@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
-import { Shield, Lock, Unlock, UserCheck, Key, X, Users, UserMinus, Crown, Eye } from 'lucide-react';
+import { Shield, Lock, Unlock, UserCheck, Key, X, UserMinus, Crown, Eye } from 'lucide-react';
 
-export default function AdminControls({ ws, meetingSettings, onUpdateSettings, participants, waitingUsers, onKick, onSetRole, onAdmit }) {
+export default function AdminControls({ meetingSettings, onUpdateSettings, participants, waitingUsers, onKick, onSetRole, onAdmit, onDeny }) {
     const settings = meetingSettings || { locked: false, waiting_room: false, password: null };
     const [password, setPassword] = useState('');
     const [showPasswordInput, setShowPasswordInput] = useState(false);
@@ -100,7 +100,7 @@ export default function AdminControls({ ws, meetingSettings, onUpdateSettings, p
                             <span>{u.name}</span>
                             <div style={{ display: 'flex', gap: 4 }}>
                                 <button className="btn btn-success btn-xs" onClick={() => onAdmit(u.id)}>Admit</button>
-                                <button className="btn btn-danger btn-xs">Deny</button>
+                                <button className="btn btn-danger btn-xs" onClick={() => onDeny?.(u.id)}>Deny</button>
                             </div>
                         </div>
                     ))}

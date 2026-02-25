@@ -1,5 +1,5 @@
 """
-AI Meeting Intelligence System — Application Entry Point
+AI Meeting Intelligence System - Application Entry Point
 =========================================================
 Production-grade FastAPI application with structured logging,
 lifespan management, error handling, and request tracing.
@@ -12,10 +12,12 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
+from sqlalchemy import inspect, text
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.api.v1.router import api_router
@@ -24,7 +26,7 @@ from app.db.base import Base
 from app.db.session import engine
 from app.core.rate_limit import limiter
 
-# ── Logging Setup ──────────────────────────────────────────
+# Logging Setup
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s | %(levelname)-8s | %(name)s | %(message)s",
@@ -34,7 +36,31 @@ logging.basicConfig(
 logger = logging.getLogger("meetingai")
 
 
-# ── Request ID Middleware ──────────────────────────────────
+def _ensure_schema_compatibility() -> None:
+    """Apply lightweight runtime schema upgrades for existing deployments."""
+    try:
+        with engine.begin() as conn:
+            inspector = inspect(conn)
+            dialect_name = (conn.dialect.name or "").lower()
+            tables = set(inspector.get_table_names())
+            if "tasks" not in tables:
+                return
+
+            task_columns = {col["name"] for col in inspector.get_columns("tasks")}
+            if "due_date" not in task_columns:
+                due_date_type = "TIMESTAMP" if dialect_name in {"postgresql", "sqlite"} else "DATETIME"
+                conn.execute(text(f"ALTER TABLE tasks ADD COLUMN due_date {due_date_type}"))
+                logger.info("Applied schema upgrade: added tasks.due_date column")
+
+            task_indexes = {idx["name"] for idx in inspector.get_indexes("tasks")}
+            if "ix_tasks_due_date" not in task_indexes:
+                conn.execute(text("CREATE INDEX IF NOT EXISTS ix_tasks_due_date ON tasks (due_date)"))
+                logger.info("Applied schema upgrade: added ix_tasks_due_date index")
+    except Exception as exc:
+        logger.warning("Runtime schema compatibility check skipped: %s", exc)
+
+
+# Request ID Middleware
 class RequestIdMiddleware(BaseHTTPMiddleware):
     """Attach a unique request ID to every request for tracing."""
 
@@ -50,7 +76,7 @@ class RequestIdMiddleware(BaseHTTPMiddleware):
         response.headers["X-Response-Time"] = f"{elapsed:.1f}ms"
 
         logger.info(
-            "%s %s %s → %s (%.1fms)",
+            "%s %s %s -> %s (%.1fms)",
             request_id,
             request.method,
             request.url.path,
@@ -60,7 +86,7 @@ class RequestIdMiddleware(BaseHTTPMiddleware):
         return response
 
 
-# ── Lifespan Handler ──────────────────────────────────────
+# Lifespan Handler
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Startup / shutdown hooks using modern lifespan protocol."""
@@ -87,6 +113,7 @@ async def lifespan(app: FastAPI):
 
     try:
         Base.metadata.create_all(bind=engine)
+        _ensure_schema_compatibility()
         logger.info("Database tables created/verified")
     except Exception as exc:
         logger.warning("Database initialization skipped: %s", exc)
@@ -97,8 +124,9 @@ async def lifespan(app: FastAPI):
     logger.info("Application shutting down...")
 
 
-# ── App Factory ───────────────────────────────────────────
+# App Factory
 def create_app() -> FastAPI:
+    show_docs = not settings.is_production
     app = FastAPI(
         title=settings.app_name,
         description=(
@@ -107,8 +135,8 @@ def create_app() -> FastAPI:
         ),
         version="2.1.0",
         lifespan=lifespan,
-        docs_url="/docs",
-        redoc_url="/redoc",
+        docs_url="/docs" if show_docs else None,
+        redoc_url="/redoc" if show_docs else None,
     )
 
     # Rate limiter
@@ -120,18 +148,21 @@ def create_app() -> FastAPI:
         CORSMiddleware,
         allow_origins=settings.cors_origins_list,
         allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
+        allow_methods=settings.cors_allow_methods_list,
+        allow_headers=settings.cors_allow_headers_list,
         expose_headers=["Content-Disposition"],
     )
+
+    # Compress API payloads to reduce transfer time on slower networks.
+    app.add_middleware(GZipMiddleware, minimum_size=1024)
 
     # Request tracing
     app.add_middleware(RequestIdMiddleware)
 
-    # ── Security Headers ──────────────────────────────────
+    # Security Headers
     from fastapi.middleware.trustedhost import TrustedHostMiddleware
-    # In production, restrict this! for now, allow all for dev
-    app.add_middleware(TrustedHostMiddleware, allowed_hosts=["*"])
+    allowed_hosts = ["*"] if settings.env != "production" else (settings.trusted_hosts_list or ["localhost"])
+    app.add_middleware(TrustedHostMiddleware, allowed_hosts=allowed_hosts)
     
     # Custom Security Headers
     @app.middleware("http")
@@ -139,17 +170,30 @@ def create_app() -> FastAPI:
         response = await call_next(request)
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["X-Frame-Options"] = "DENY"
-        response.headers["X-XSS-Protection"] = "1; mode=block"
         response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
-        # In dev mode, allow inline styles/scripts and ws connections for React dev server
+        response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
+        response.headers["Cross-Origin-Opener-Policy"] = "same-origin"
+        response.headers["Cross-Origin-Resource-Policy"] = "same-origin"
+        response.headers["X-Permitted-Cross-Domain-Policies"] = "none"
+        # Keep CSP broad in development for hot reload and local tooling.
         if settings.env != "production":
-            response.headers["Content-Security-Policy"] = "default-src * 'unsafe-inline' 'unsafe-eval' data: blob: ws: wss:;"
+            response.headers["Content-Security-Policy"] = (
+                "default-src 'self' data: blob:; "
+                "script-src 'self' 'unsafe-eval'; "
+                "style-src 'self' 'unsafe-inline'; "
+                "connect-src 'self' ws: wss: http: https:; "
+                "img-src 'self' data: blob:; object-src 'none'; base-uri 'self';"
+            )
         else:
-            response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
-            response.headers["Content-Security-Policy"] = "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'self' ws: wss:; object-src 'none';"
+            response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains; preload"
+            response.headers["Content-Security-Policy"] = (
+                "default-src 'self'; script-src 'self'; style-src 'self'; "
+                "connect-src 'self' wss:; img-src 'self' data:; object-src 'none'; "
+                "base-uri 'self'; frame-ancestors 'none';"
+            )
         return response
 
-    # ── Global Exception Handlers ─────────────────────────
+    # Global Exception Handlers
     @app.exception_handler(ValueError)
     async def value_error_handler(request: Request, exc: ValueError):
         return JSONResponse(status_code=400, content={"detail": str(exc)})
@@ -168,10 +212,10 @@ def create_app() -> FastAPI:
             content={"detail": str(exc)},
         )
 
-    # ── Routes ────────────────────────────────────────────
+    # Routes
     app.include_router(api_router, prefix="/api/v1")
 
-    # ── Metrics Endpoint ──────────────────────────────────
+    # Metrics Endpoint
     try:
         from app.middleware.prometheus import metrics_endpoint, PrometheusMiddleware
         app.add_middleware(PrometheusMiddleware)
@@ -195,3 +239,4 @@ def create_app() -> FastAPI:
 
 
 app = create_app()
+

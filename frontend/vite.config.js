@@ -19,16 +19,29 @@ export default defineConfig({
     target: 'es2020',
     minify: 'esbuild',
     cssMinify: true,
-    chunkSizeWarningLimit: 600,
+    chunkSizeWarningLimit: 800,
     sourcemap: false,
   },
   // ── Dev server speed ──
   server: {
     hmr: { overlay: true },
-    warmup: { clientFiles: ['./src/App.jsx', './src/main.jsx'] },
+    warmup: {
+      clientFiles: [
+        './src/App.jsx',
+        './src/main.jsx',
+        './src/pages/DashboardPage.jsx',
+        './src/pages/MeetingsPage.jsx',
+        './src/pages/TaskBoardPage.jsx',
+        './src/pages/SettingsPage.jsx',
+        './src/components/Layout.jsx',
+      ],
+    },
   },
-  // ── Optimize deps ──
+  // ── Optimize deps (pre-bundle for instant dev loads) ──
   optimizeDeps: {
-    include: ['react', 'react-dom', 'react-router-dom', 'axios', 'framer-motion', 'lucide-react'],
+    include: [
+      'react', 'react-dom', 'react-router-dom',
+      'axios', 'framer-motion', 'lucide-react', 'react-hot-toast',
+    ],
   },
 })

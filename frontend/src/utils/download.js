@@ -1,96 +1,93 @@
 /**
- * Download utility — uses multiple strategies to ensure files 
- * actually save on Windows (bypasses SmartScreen/Defender issues).
+ * Bulletproof download utility.
  * 
- * Strategy order:
- * 1. navigator.msSaveOrOpenBlob (legacy Edge — most reliable on Windows)
- * 2. Blob with anchor click + forced DOM attachment
- * 3. Data URI fallback
+ * Primary:  showSaveFilePicker (native Save-As dialog — guaranteed filename)
+ * Fallback: blob + anchor.download (for browsers without File System Access API)
  */
+
+// Map of extensions to MIME accept types for showSaveFilePicker
+const EXT_MAP = {
+    '.txt': { 'text/plain': ['.txt'] },
+    '.ics': { 'text/calendar': ['.ics'] },
+    '.json': { 'application/json': ['.json'] },
+    '.csv': { 'text/csv': ['.csv'] },
+    '.webm': { 'video/webm': ['.webm'] },
+    '.mp4': { 'video/mp4': ['.mp4'] },
+    '.png': { 'image/png': ['.png'] },
+};
+
+function getExt(filename) {
+    const dot = filename.lastIndexOf('.');
+    return dot >= 0 ? filename.slice(dot) : '.txt';
+}
+
+function normalizeFilename(filename, fallback = 'download.txt') {
+    const base = (filename || '').trim();
+    const withoutControls = Array.from(base, (ch) => (ch.charCodeAt(0) < 32 ? '_' : ch)).join('');
+    const cleaned = withoutControls
+        .trim()
+        .replace(/[<>:"/\\|?*]/g, '_')
+        .replace(/\s+/g, ' ')
+        .replace(/^\.+/, '')
+        .trim();
+    if (!cleaned) return fallback;
+    return cleaned.slice(0, 180);
+}
 
 /**
- * Core download function that tries multiple approaches
+ * Save a Blob to disk. Uses showSaveFilePicker if available,
+ * otherwise falls back to anchor.download.
  */
-function triggerDownload(blob, filename) {
-    // Strategy 1: msSaveOrOpenBlob (works reliably on Windows Edge legacy)
-    if (window.navigator && window.navigator.msSaveOrOpenBlob) {
-        window.navigator.msSaveOrOpenBlob(blob, filename);
-        return;
+export async function saveAs(blob, filename) {
+    const safeFilename = normalizeFilename(filename);
+
+    // Strategy 1: File System Access API (native Save-As dialog)
+    if (window.showSaveFilePicker) {
+        try {
+            const ext = getExt(safeFilename);
+            const accept = EXT_MAP[ext] || { 'application/octet-stream': [ext] };
+            const handle = await window.showSaveFilePicker({
+                suggestedName: safeFilename,
+                types: [{ description: 'File', accept }],
+            });
+            const writable = await handle.createWritable();
+            await writable.write(blob);
+            await writable.close();
+            return true;
+        } catch (err) {
+            if (err.name === 'AbortError') return false; // user cancelled
+            console.warn('showSaveFilePicker failed, using fallback:', err);
+        }
     }
 
-    // Strategy 2: Create object URL, attach to visible (but off-screen) anchor
+    // Strategy 2: Blob URL + anchor.download (fallback)
     const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = filename;
-    // Make it "real" in the DOM rather than display:none
-    link.style.position = 'fixed';
-    link.style.left = '-9999px';
-    link.style.top = '-9999px';
-    link.style.opacity = '0';
-    document.body.appendChild(link);
-
-    // Use a microtask delay to let the browser register the link
-    requestAnimationFrame(() => {
-        link.click();
-        // Cleanup after a generous delay
-        setTimeout(() => {
-            try { document.body.removeChild(link); } catch (e) { /* already removed */ }
-            URL.revokeObjectURL(url);
-        }, 5000);
-    });
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = safeFilename;
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => {
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+    }, 3000);
+    return true;
 }
 
-/**
- * Download text content as a file (TXT, ICS, JSON, CSV, etc.)
- */
-export function downloadTextFile(content, filename, mimeType = 'text/plain') {
+/** Save text content as a file */
+export async function downloadTextFile(content, filename, mimeType = 'text/plain') {
     const blob = new Blob([content], { type: mimeType });
-    triggerDownload(blob, filename);
+    return saveAs(blob, filename);
 }
 
-/**
- * Download binary content (Blob) as file.
- */
-export function downloadBlobFile(blob, filename) {
-    triggerDownload(blob, filename);
+/** Save a Blob (recordings, binary) */
+export async function downloadBlobFile(blob, filename) {
+    return saveAs(blob, filename);
 }
 
-/**
- * Download canvas content as PNG
- */
+/** Save canvas as PNG */
 export function downloadCanvas(canvas, filename) {
-    canvas.toBlob((blob) => {
-        if (blob) {
-            triggerDownload(blob, filename);
-        }
+    canvas.toBlob(async (blob) => {
+        if (blob) await saveAs(blob, filename);
     }, 'image/png');
-}
-
-/**
- * Download a file from a URL by fetching it and triggering save.
- * Use this for server-side download endpoints.
- */
-export async function downloadFromUrl(url, fallbackFilename = 'download.txt', headers = {}) {
-    try {
-        const response = await fetch(url, { headers });
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
-
-        // Extract filename from Content-Disposition header if available
-        const disposition = response.headers.get('Content-Disposition');
-        let filename = fallbackFilename;
-        if (disposition) {
-            const match = disposition.match(/filename="?([^";\n]+)"?/);
-            if (match) filename = match[1];
-        }
-
-        const blob = await response.blob();
-        triggerDownload(blob, filename);
-        return true;
-    } catch (err) {
-        console.error('Download failed:', err);
-        // Fallback: open in new tab
-        window.open(url, '_blank');
-        return false;
-    }
 }
