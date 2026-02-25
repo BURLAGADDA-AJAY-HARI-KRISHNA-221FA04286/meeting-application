@@ -97,38 +97,22 @@ class AIAgentOrchestrator:
         logger.info("🚀 Starting AI Pipeline for Meeting %d", self.meeting_id)
 
         await self._fetch_transcript()
-
-        # ── 1) Summary Agent ──
-        summary_prompt = f"""You are analyzing a meeting transcript.
-Generate a comprehensive meeting summary. Include:
-- "executive_summary": A 2-3 sentence overview of the entire meeting
-- "key_points": Array of 3-8 important points discussed
-- "topics_discussed": Array of main topics/themes
-- "meeting_type": The type of meeting (standup, review, planning, brainstorm, etc.)
+        # ── 1) Single Master AI Pass ──
+        prompt = f"""You are an expert AI meeting analyst.
+Analyze the following meeting transcript and extract all insights into a strictly structured JSON response.
 
 TRANSCRIPT:
 {self.transcript_text}
 
-IMPORTANT: Return ONLY valid JSON. No markdown, no code blocks.
-EXPECTED JSON:
-{{ "executive_summary": "...", "key_points": ["..."], "topics_discussed": ["..."], "meeting_type": "..." }}"""
-
-        summary_json = await self._call_gemini(
-            summary_prompt,
-            fallback={"executive_summary": "", "key_points": [], "topics_discussed": [], "meeting_type": "general"},
-        )
-
-        # ── 2) Actions + Decisions Agent ──
-        actions_prompt = f"""You are analyzing a meeting transcript to extract action items and decisions.
-
-Extract ALL action items (tasks that need to be done) and decisions made during the meeting.
-
-TRANSCRIPT:
-{self.transcript_text}
-
-IMPORTANT: Return ONLY valid JSON. No markdown, no code blocks.
-EXPECTED JSON:
+IMPORTANT: Return ONLY valid JSON. Do not include markdown formatting or backticks around the JSON.
+EXPECTED JSON FORMAT:
 {{
+  "summary": {{ 
+      "executive_summary": "2-3 sentence overview of the entire meeting", 
+      "key_points": ["important point 1", "important point 2"], 
+      "topics_discussed": ["topic 1", "topic 2"], 
+      "meeting_type": "standup/review/planning/brainstorm/general" 
+  }},
   "action_items": [
     {{
       "task": "Description of the action item",
@@ -151,19 +135,23 @@ EXPECTED JSON:
   ]
 }}
 
-If there are no items for a category, return an empty array.
-Be thorough — extract even implied action items like "we should..." or "let's..." or "next step is..."."""
+If there are no items for a category (like risks or decisions), return an empty array [] for that key. Be thorough — extract even implied action items like "we should..." or "let's..."."""
 
-        actions_json = await self._call_gemini(
-            actions_prompt,
-            fallback={"action_items": [], "decisions": [], "risks": []},
+        result_json = await self._call_gemini(
+            prompt,
+            fallback={
+                "summary": {"executive_summary": "Analysis failed", "key_points": [], "topics_discussed": [], "meeting_type": "general"},
+                "action_items": [],
+                "decisions": [],
+                "risks": []
+            },
         )
 
         # Normalize: ensure expected keys exist
-        if "action_items" not in actions_json:
-            actions_json["action_items"] = []
-        decisions_json = {"decisions": actions_json.pop("decisions", [])}
-        risks_json = {"risks": actions_json.pop("risks", [])}
+        summary_json = result_json.get("summary", {"executive_summary": "", "key_points": [], "topics_discussed": [], "meeting_type": "general"})
+        actions_json = {"action_items": result_json.get("action_items", [])}
+        decisions_json = {"decisions": result_json.get("decisions", [])}
+        risks_json = {"risks": result_json.get("risks", [])}
 
         # ── 3) Sentiment (lightweight — derive from summary) ──
         sentiment_json = {"overall": "neutral", "distribution": {}}
