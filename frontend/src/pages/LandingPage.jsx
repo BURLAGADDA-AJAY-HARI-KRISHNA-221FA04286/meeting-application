@@ -9,34 +9,47 @@ function Particles() {
         const c = ref.current; if (!c) return;
         const ctx = c.getContext('2d');
         let W, H, pts, id;
-        const N = 70, D = 140;
+        // Fewer particles on touch/mobile — massive perf gain
+        const isTouch = window.matchMedia('(pointer: coarse)').matches;
+        const N = isTouch ? 25 : 40;   // was 70
+        const D = isTouch ? 0 : 120;  // no lines on mobile
         const resize = () => { W = c.width = innerWidth; H = c.height = innerHeight; };
-        resize(); window.addEventListener('resize', resize);
+        resize(); window.addEventListener('resize', resize, { passive: true });
         pts = Array.from({ length: N }, () => ({
             x: Math.random() * W, y: Math.random() * H,
-            vx: (Math.random() - .5) * .4, vy: (Math.random() - .5) * .4,
-            r: Math.random() * 1.6 + .5, a: Math.random() * .35 + .08,
+            vx: (Math.random() - .5) * .35, vy: (Math.random() - .5) * .35,
+            r: Math.random() * 1.4 + .5, a: Math.random() * .3 + .08,
         }));
-        let mx = -1e4, my = -1e4;
-        const mv = e => { mx = e.clientX; my = e.clientY; };
+        let mx = -1e4, my = -1e4, needMouse = false;
+        const mv = e => { mx = e.clientX; my = e.clientY; needMouse = true; };
         window.addEventListener('mousemove', mv, { passive: true });
+        let frame = 0;
         const tick = () => {
+            frame++;
             ctx.clearRect(0, 0, W, H);
             pts.forEach(p => {
                 p.x += p.vx; p.y += p.vy;
                 if (p.x < 0 || p.x > W) p.vx *= -1;
                 if (p.y < 0 || p.y > H) p.vy *= -1;
-                const dx = p.x - mx, dy = p.y - my, dm = Math.sqrt(dx * dx + dy * dy);
-                if (dm < 100) { p.x += dx / dm * 1.2; p.y += dy / dm * 1.2; }
+                if (needMouse) {
+                    const dx = p.x - mx, dy = p.y - my;
+                    const d2 = dx * dx + dy * dy;
+                    if (d2 < 8100) { const dm = Math.sqrt(d2); p.x += dx / dm * 1.1; p.y += dy / dm * 1.1; }
+                }
                 ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
                 ctx.fillStyle = `rgba(110,100,255,${p.a})`; ctx.fill();
             });
-            for (let i = 0; i < N; i++) for (let j = i + 1; j < N; j++) {
-                const dx = pts[i].x - pts[j].x, dy = pts[i].y - pts[j].y;
-                const d = Math.sqrt(dx * dx + dy * dy);
-                if (d < D) {
-                    ctx.beginPath(); ctx.moveTo(pts[i].x, pts[i].y); ctx.lineTo(pts[j].x, pts[j].y);
-                    ctx.strokeStyle = `rgba(100,90,240,${(1 - d / D) * .1})`; ctx.lineWidth = .7; ctx.stroke();
+            needMouse = false;
+            // Lines every 2nd frame, desktop only
+            if (D > 0 && frame % 2 === 0) {
+                for (let i = 0; i < N; i++) for (let j = i + 1; j < N; j++) {
+                    const dx = pts[i].x - pts[j].x, dy = pts[i].y - pts[j].y;
+                    const d2 = dx * dx + dy * dy;
+                    if (d2 < D * D) {
+                        const d = Math.sqrt(d2);
+                        ctx.beginPath(); ctx.moveTo(pts[i].x, pts[i].y); ctx.lineTo(pts[j].x, pts[j].y);
+                        ctx.strokeStyle = `rgba(100,90,240,${(1 - d / D) * .09})`; ctx.lineWidth = .6; ctx.stroke();
+                    }
                 }
             }
             id = requestAnimationFrame(tick);
@@ -64,29 +77,39 @@ function useReveal() {
 }
 function useTilt(ref) {
     useEffect(() => {
+        if (window.matchMedia('(pointer: coarse)').matches) return; // skip on touch
         const el = ref.current; if (!el) return;
+        let rafId;
         const mv = e => {
-            const cx = innerWidth / 2, cy = innerHeight / 2;
-            el.style.transform = `rotateX(${16 - (e.clientY - cy) / cy * 6}deg) rotateY(${-2 + (e.clientX - cx) / cx * 5}deg)`;
+            cancelAnimationFrame(rafId);
+            rafId = requestAnimationFrame(() => {
+                const cx = innerWidth / 2, cy = innerHeight / 2;
+                el.style.transform = `rotateX(${16 - (e.clientY - cy) / cy * 6}deg) rotateY(${-2 + (e.clientX - cx) / cx * 5}deg)`;
+            });
         };
-        const out = () => { el.style.transform = 'rotateX(16deg) rotateY(-2deg)'; };
+        const out = () => { cancelAnimationFrame(rafId); el.style.transform = 'rotateX(16deg) rotateY(-2deg)'; };
         window.addEventListener('mousemove', mv, { passive: true });
         el.closest('.lp-scene')?.addEventListener('mouseleave', out);
-        return () => window.removeEventListener('mousemove', mv);
+        return () => { cancelAnimationFrame(rafId); window.removeEventListener('mousemove', mv); };
     }, [ref]);
 }
 function useBentoTilt() {
     useEffect(() => {
+        if (window.matchMedia('(pointer: coarse)').matches) return; // skip on touch
         const cards = Array.from(document.querySelectorAll('.lp-bcard'));
         const handlers = [];
         cards.forEach(c => {
+            let rafId;
             const mv = e => {
-                const r = c.getBoundingClientRect();
-                const x = ((e.clientX - r.left) / r.width - .5) * 14;
-                const y = -((e.clientY - r.top) / r.height - .5) * 14;
-                c.style.transform = `perspective(900px) rotateX(${y}deg) rotateY(${x}deg) translateY(-5px)`;
+                cancelAnimationFrame(rafId);
+                rafId = requestAnimationFrame(() => {
+                    const r = c.getBoundingClientRect();
+                    const x = ((e.clientX - r.left) / r.width - .5) * 12;
+                    const y = -((e.clientY - r.top) / r.height - .5) * 12;
+                    c.style.transform = `perspective(900px) rotateX(${y}deg) rotateY(${x}deg) translateY(-4px)`;
+                });
             };
-            const out = () => { c.style.transform = ''; };
+            const out = () => { cancelAnimationFrame(rafId); c.style.transform = ''; };
             c.addEventListener('mousemove', mv); c.addEventListener('mouseleave', out);
             handlers.push({ c, mv, out });
         });

@@ -20,13 +20,13 @@ export default defineConfig({
     target: 'es2020',
     minify: 'esbuild',
     cssMinify: true,
-    cssCodeSplit: true,        // each chunk gets its own CSS file
+    cssCodeSplit: true,
     chunkSizeWarningLimit: 600,
     sourcemap: false,
-    // Drop console/debugger in production for speed
-    esbuildOptions: {
-      drop: ['console', 'debugger'],
-    },
+  },
+  // Drop console/debugger in production (correct top-level key)
+  esbuild: {
+    drop: ['console', 'debugger'],
   },
   // ── Dev server ──
   server: {

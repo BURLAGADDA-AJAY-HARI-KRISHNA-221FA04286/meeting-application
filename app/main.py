@@ -86,6 +86,24 @@ class RequestIdMiddleware(BaseHTTPMiddleware):
         return response
 
 
+# Short-lived GET cache — reduces repeat API roundtrips in the browser
+class CacheControlMiddleware(BaseHTTPMiddleware):
+    """Set short Cache-Control on safe GET responses so browsers can serve stale-while-revalidate."""
+    SKIP_PATHS = {"/api/v1/auth", "/ws"}  # don't cache auth or websockets
+
+    async def dispatch(self, request: Request, call_next):
+        response = await call_next(request)
+        if (
+            request.method == "GET"
+            and 200 <= response.status_code < 300
+            and not any(request.url.path.startswith(p) for p in self.SKIP_PATHS)
+        ):
+            response.headers.setdefault(
+                "Cache-Control", "public, max-age=3, stale-while-revalidate=10"
+            )
+        return response
+
+
 # Lifespan Handler
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -155,6 +173,9 @@ def create_app() -> FastAPI:
 
     # Compress API payloads to reduce transfer time on slower networks.
     app.add_middleware(GZipMiddleware, minimum_size=1024)
+
+    # Short-lived GET cache (stale-while-revalidate for fast repeat loads)
+    app.add_middleware(CacheControlMiddleware)
 
     # Request tracing
     app.add_middleware(RequestIdMiddleware)
