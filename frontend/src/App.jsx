@@ -25,6 +25,7 @@ const MeetingDetailPage = lazyWithPreload(() => import('./pages/MeetingDetailPag
 const VideoMeetingPage = lazyWithPreload(() => import('./pages/VideoMeetingPage'));
 const LiveMeetingPage = lazyWithPreload(() => import('./pages/LiveMeetingPage'));
 const JoinMeetingPage = lazyWithPreload(() => import('./pages/JoinMeetingPage'));
+const LandingPage = lazyWithPreload(() => import('./pages/LandingPage'));
 
 function RouteWarmup() {
   const { user } = useAuth();
@@ -117,6 +118,9 @@ export default function App() {
 
         <Suspense fallback={<PageLoader />}>
           <Routes>
+            {/* ── Public: Landing page (always accessible) ── */}
+            <Route path="/" element={<LandingPage />} />
+
             <Route element={<PublicRoute />}>
               <Route path="/login" element={<LoginPage />} />
               <Route path="/register" element={<RegisterPage />} />
@@ -142,7 +146,7 @@ export default function App() {
               <Route path="/meetings/live" element={<Navigate to="/meetings/new" replace />} />
             </Route>
 
-            <Route path="*" element={<Navigate to="/dashboard" />} />
+            <Route path="*" element={<Navigate to="/" />} />
           </Routes>
         </Suspense>
       </AuthProvider>

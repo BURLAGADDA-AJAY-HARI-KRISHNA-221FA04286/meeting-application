@@ -44,9 +44,33 @@ def _hash_password(password: str) -> str:
 
 # In-memory store for active video rooms
 # meeting_code -> room info dict
-video_rooms = {}
+video_rooms: dict = {}
 # room_id -> meeting_code  (reverse map for WebSocket compatibility)
-room_id_to_code = {}
+room_id_to_code: dict = {}
+# Per-room asyncio lock to prevent race conditions with concurrent joins
+_room_locks: dict = {}
+
+
+def _get_room_lock(code: str) -> asyncio.Lock:
+    """Get or create a per-room lock. Prevents concurrent join race conditions."""
+    if code not in _room_locks:
+        _room_locks[code] = asyncio.Lock()
+    return _room_locks[code]
+
+
+def _cleanup_empty_rooms() -> None:
+    """Remove rooms with no participants to prevent memory leaks."""
+    empty = [
+        code for code, room in video_rooms.items()
+        if not room.get("participants")
+    ]
+    for code in empty:
+        video_rooms.pop(code, None)
+        _room_locks.pop(code, None)
+        # Also clean reverse map
+        rid = video_rooms.get(code, {}).get("room_id")
+        if rid:
+            room_id_to_code.pop(rid, None)
 
 
 # ── Schemas ───────────────────────────────────────────────
@@ -132,7 +156,7 @@ async def create_room(
         room_id=room_id,
         meeting_code=meeting_code,
         password=password,
-        join_link=f"/video-meeting/{room_id}",
+        join_link=f"/meetings/room/{room_id}",
         title=title,
     )
 
@@ -179,7 +203,7 @@ async def get_room_info(
             meeting_code="",
             title="Meeting",
             host_name="",
-            join_link=f"/video-meeting/{room_id}",
+            join_link=f"/meetings/room/{room_id}",
             active_participants=0,
             created_at=datetime.utcnow().isoformat(),
         )
@@ -189,7 +213,7 @@ async def get_room_info(
         meeting_code=room["meeting_code"],
         title=room["title"],
         host_name=room["host_name"],
-        join_link=f"/video-meeting/{room_id}",
+        join_link=f"/meetings/room/{room_id}",
         active_participants=len(room["participants"]),
         created_at=room["created_at"],
     )
@@ -334,20 +358,29 @@ async def video_meeting_websocket(
         }
         room = video_rooms[code]
 
-    participant = {"ws": websocket, "user_id": user_id, "display_name": display_name}
-    room["participants"].append(participant)
+    async with _get_room_lock(code):
+        participant = {"ws": websocket, "user_id": user_id, "display_name": display_name}
+        room["participants"].append(participant)
+
+    # Snapshot existing participants BEFORE adding self, for room-state
+    existing_participants = [
+        {"user_id": p["user_id"], "display_name": p["display_name"]}
+        for p in room["participants"] if p["user_id"] != user_id
+    ]
 
     try:
-        # Notify others
+        # Notify others that someone joined
         await broadcast(code, {
             "type": "user-joined",
             "user_id": user_id,
             "display_name": display_name,
-            "participants": [
-                {"user_id": p["user_id"], "display_name": p["display_name"]}
-                for p in room["participants"]
-            ],
         }, exclude=websocket)
+
+        # Send current room state to the new joiner (so they can dial everyone)
+        await websocket.send_json({
+            "type": "room-state",
+            "participants": existing_participants,
+        })
 
         while True:
             data = await websocket.receive_json()
@@ -447,39 +480,43 @@ async def video_meeting_websocket(
 
             elif msg_type == "admin-setting":
                 # Broadcast admin setting change to all participants
+                # Include target_user_id so mute-participant works client-side
                 await broadcast(code, {
                     "type": "admin-setting",
                     "setting": data.get("setting"),
                     "enabled": data.get("enabled"),
+                    "target_user_id": data.get("target_user_id"),
                     "admin_name": display_name,
+                })
+
+            elif msg_type == "shared-notes":
+                # Relay shared notes to all participants
+                await broadcast(code, {
+                    "type": "shared-notes",
+                    "text": data.get("text", ""),
+                    "sender_name": display_name,
                 }, exclude=websocket)
 
-    except WebSocketDisconnect:
-        try:
-            if participant in room["participants"]:
+    except (WebSocketDisconnect, asyncio.CancelledError):
+        pass
+    except Exception as e:
+        logger.error("WebSocket Error: %s", e, exc_info=True)
+    finally:
+        # Guaranteed cleanup on any exit — disconnect, error, or shutdown
+        async with _get_room_lock(code):
+            try:
                 room["participants"].remove(participant)
-        except (ValueError, KeyError):
-            pass
+            except (ValueError, KeyError):
+                pass
+        # Notify remaining participants the user left
         if room.get("participants"):
             await broadcast(code, {
                 "type": "user-left",
                 "user_id": user_id,
                 "display_name": display_name,
             })
-    except asyncio.CancelledError:
-        # Graceful shutdown — don't let this crash the server
-        try:
-            if participant in room["participants"]:
-                room["participants"].remove(participant)
-        except (ValueError, KeyError):
-            pass
-    except Exception as e:
-        logger.error(f"WebSocket Error: {e}")
-        try:
-            if participant in room["participants"]:
-                room["participants"].remove(participant)
-        except (ValueError, KeyError):
-            pass
+        # Clean up empty rooms to prevent memory leaks
+        _cleanup_empty_rooms()
 
 
 async def broadcast(code: str, message: dict, exclude: WebSocket = None):

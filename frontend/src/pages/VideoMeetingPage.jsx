@@ -51,7 +51,12 @@ export default function VideoMeetingPage() {
     const [captionsOn, setCaptionsOn] = useState(true);
     const [captions, setCaptions] = useState([]);
     const recognitionRef = useRef(null);
-    const captionsOnRef = useRef(true);
+    const captionsOnRef = useRef(false);
+    const recognitionRestartTimerRef = useRef(null);
+    const recognitionWatchdogRef = useRef(null);
+    const lastRecognitionActivityRef = useRef(Date.now());
+    // Ref so recognition closures always read current captions+connected state
+    const startFreshRecognitionRef = useRef(null);
 
     // ── Recording ──
     const [isRecording, setIsRecording] = useState(false);
@@ -106,10 +111,13 @@ export default function VideoMeetingPage() {
     const reconnectTimerRef = useRef(null);
     const reconnectAttemptsRef = useRef(0);
     const shouldReconnectRef = useRef(true);
+    const leavingRef = useRef(false);
     const localVideoRef = useRef(null);
     const localStreamRef = useRef(null);
     const screenVideoRef = useRef(null);
     const peerConnections = useRef({});
+    // Queue of ICE candidates received before remoteDescription is set
+    const pendingCandidates = useRef({});
     const containerRef = useRef(null);
 
     /* ═══════════════════════════════════════════════
@@ -161,57 +169,102 @@ export default function VideoMeetingPage() {
                 if (localVideoRef.current) localVideoRef.current.srcObject = stream;
                 connectSignaling(stream);
 
-                // Auto-start captions (speech recognition)
-                try {
-                    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-                    if (SpeechRecognition && !recognitionRef.current) {
-                        const recognition = new SpeechRecognition();
-                        recognition.continuous = true;
-                        recognition.interimResults = true;
-                        recognition.lang = 'en-US';
-                        recognition.maxAlternatives = 1;
+                // Build the shared restarter — always creates a NEW instance
+                const buildStartFresh = () => {
+                    const startFresh = () => {
+                        if (!captionsOnRef.current) return;
+                        // Tear down cleanly
+                        if (recognitionRef.current) {
+                            try { recognitionRef.current.onend = null; recognitionRef.current.onerror = null; recognitionRef.current.onresult = null; } catch { }
+                            try { recognitionRef.current.abort(); } catch { }
+                            recognitionRef.current = null;
+                        }
+                        const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+                        if (!SR) return;
+                        const rec = new SR();
+                        rec.continuous = true;
+                        rec.interimResults = true;
+                        rec.lang = 'en-US';
+                        rec.maxAlternatives = 1;
+                        recognitionRef.current = rec;
+                        lastRecognitionActivityRef.current = Date.now();
 
-                        recognition.onresult = (event) => {
-                            let finalText = '';
-                            let interimText = '';
+                        rec.onresult = (event) => {
+                            lastRecognitionActivityRef.current = Date.now();
+                            let finalText = ''; let interimText = '';
                             for (let i = event.resultIndex; i < event.results.length; i++) {
-                                const transcript = event.results[i][0].transcript;
-                                if (event.results[i].isFinal) finalText += transcript;
-                                else interimText += transcript;
+                                const t = event.results[i][0].transcript;
+                                if (event.results[i].isFinal) finalText += t;
+                                else interimText += t;
                             }
                             if (finalText) {
                                 const elapsed = (Date.now() - meetingStartTimeRef.current) / 1000;
                                 transcriptRef.current.push({
-                                    speaker: user?.full_name || 'You',
-                                    text: finalText,
-                                    start_time: Math.max(0, elapsed - 5),
-                                    end_time: elapsed,
-                                    confidence: event.results[event.resultIndex]?.[0]?.confidence || 0.9,
+                                    speaker: user?.full_name || 'You', text: finalText,
+                                    start_time: Math.max(0, elapsed - 5), end_time: elapsed,
+                                    confidence: rec.results?.[event.resultIndex]?.[0]?.confidence || 0.9,
                                 });
-                                setCaptions(prev => {
-                                    const updated = [...prev, { text: finalText, speaker: user?.full_name || 'You', time: Date.now(), final: true }];
-                                    return updated.slice(-8);
-                                });
+                                setCaptions(prev => [...prev, { text: finalText, speaker: user?.full_name || 'You', time: Date.now(), final: true }].slice(-8));
                             } else if (interimText) {
-                                setCaptions(prev => {
-                                    const filtered = prev.filter(c => c.final);
-                                    return [...filtered, { text: interimText, speaker: user?.full_name || 'You', time: Date.now(), final: false }];
-                                });
+                                setCaptions(prev => [...prev.filter(c => c.final), { text: interimText, speaker: user?.full_name || 'You', time: Date.now(), final: false }]);
                             }
                         };
-                        recognition.onerror = (e) => {
-                            if (e.error !== 'no-speech' && e.error !== 'aborted') console.warn('Speech error:', e.error);
-                        };
-                        recognition.onend = () => {
-                            if (captionsOnRef.current && recognitionRef.current) {
-                                try { recognitionRef.current.start(); } catch { }
+                        rec.onerror = (e) => {
+                            lastRecognitionActivityRef.current = Date.now();
+                            if (e.error === 'not-allowed' || e.error === 'service-not-allowed') {
+                                captionsOnRef.current = false; setCaptionsOn(false); return;
+                            }
+                            if (e.error === 'no-speech' || e.error === 'aborted') return;
+                            console.warn('[Captions] error:', e.error, '— restart in 800ms');
+                            if (captionsOnRef.current) {
+                                if (recognitionRestartTimerRef.current) clearTimeout(recognitionRestartTimerRef.current);
+                                recognitionRestartTimerRef.current = setTimeout(() => startFresh(), 800);
                             }
                         };
+                        rec.onend = () => {
+                            if (!captionsOnRef.current) return;
+                            if (recognitionRestartTimerRef.current) clearTimeout(recognitionRestartTimerRef.current);
+                            recognitionRestartTimerRef.current = setTimeout(() => startFresh(), 250);
+                        };
+                        try { rec.start(); } catch (e) {
+                            console.warn('[Captions] start failed:', e.message);
+                            if (recognitionRestartTimerRef.current) clearTimeout(recognitionRestartTimerRef.current);
+                            recognitionRestartTimerRef.current = setTimeout(() => startFresh(), 500);
+                        }
+                    };
+                    return startFresh;
+                };
 
-                        recognition.start();
-                        recognitionRef.current = recognition;
-                    }
-                } catch { }
+                // Auto-start captions if supported
+                const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+                if (SpeechRecognition) {
+                    captionsOnRef.current = true;
+                    setCaptionsOn(true);
+                    const startFresh = buildStartFresh();
+                    startFreshRecognitionRef.current = startFresh;
+                    startFresh();
+
+                    // Watchdog
+                    recognitionWatchdogRef.current = setInterval(() => {
+                        if (!captionsOnRef.current) return;
+                        if (Date.now() - lastRecognitionActivityRef.current > 20000) {
+                            console.warn('[Captions] watchdog: force restarting');
+                            if (recognitionRestartTimerRef.current) clearTimeout(recognitionRestartTimerRef.current);
+                            startFreshRecognitionRef.current?.();
+                        }
+                    }, 8000);
+
+                    // Resume on tab visibility
+                    const onVisible = () => {
+                        if (document.visibilityState === 'visible' && captionsOnRef.current) {
+                            if (recognitionRestartTimerRef.current) clearTimeout(recognitionRestartTimerRef.current);
+                            recognitionRestartTimerRef.current = setTimeout(() => startFreshRecognitionRef.current?.(), 400);
+                        }
+                    };
+                    document.addEventListener('visibilitychange', onVisible);
+                    // Store cleanup on the ref so teardown can access it
+                    startFreshRecognitionRef._visibilityCleanup = onVisible;
+                }
             })
             .catch(err => {
                 if (cancelled) return; // Don't show errors if already cleaning up
@@ -242,8 +295,18 @@ export default function VideoMeetingPage() {
             Object.values(peerConnections.current).forEach(pc => { try { pc.close(); } catch { } });
             peerConnections.current = {};
             captionsOnRef.current = false;
-            try { recognitionRef.current?.stop(); } catch { }
-            recognitionRef.current = null;
+            // Clean up watchdog and visibility listener
+            if (recognitionWatchdogRef.current) { clearInterval(recognitionWatchdogRef.current); recognitionWatchdogRef.current = null; }
+            if (recognitionRestartTimerRef.current) { clearTimeout(recognitionRestartTimerRef.current); recognitionRestartTimerRef.current = null; }
+            if (startFreshRecognitionRef._visibilityCleanup) {
+                document.removeEventListener('visibilitychange', startFreshRecognitionRef._visibilityCleanup);
+                startFreshRecognitionRef._visibilityCleanup = null;
+            }
+            if (recognitionRef.current) {
+                try { recognitionRef.current.onend = null; recognitionRef.current.onerror = null; } catch { }
+                try { recognitionRef.current.abort(); } catch { }
+                recognitionRef.current = null;
+            }
             try { stopRecording(true); } catch { }
         };
     }, [roomId, user, navigate]);
@@ -326,6 +389,38 @@ export default function VideoMeetingPage() {
             try {
                 const data = JSON.parse(event.data);
                 switch (data.type) {
+                    case 'room-state': {
+                        // Update participant list
+                        const existing = data.participants.map(p => ({
+                            id: p.user_id,
+                            name: p.display_name,
+                            handRaised: false
+                        }));
+                        setParticipants(prev => {
+                            const map = new Map(prev.map(p => [String(p.id), p]));
+                            existing.forEach(p => map.set(String(p.id), p));
+                            return Array.from(map.values());
+                        });
+                        // CRITICAL FIX: Initiate WebRTC to ALL existing peers
+                        // The new joiner must call createOffer to each person already in the room
+                        for (const p of data.participants) {
+                            if (!peerConnections.current[p.user_id]) {
+                                console.log('[WebRTC] Connecting to existing peer:', p.user_id, p.display_name);
+                                const pc = createPeerConnection(p.user_id, stream);
+                                try {
+                                    const offer = await pc.createOffer();
+                                    await pc.setLocalDescription(offer);
+                                    ws.send(JSON.stringify({
+                                        type: 'signal', target: p.user_id,
+                                        payload: { type: 'offer', sdp: pc.localDescription }
+                                    }));
+                                } catch (err) {
+                                    console.error('[WebRTC] Failed to create offer for existing peer:', err);
+                                }
+                            }
+                        }
+                        break;
+                    }
                     case 'user-joined':
                         handleUserJoined(data.user_id, data.display_name, stream);
                         break;
@@ -450,6 +545,12 @@ export default function VideoMeetingPage() {
         try {
             if (payload.type === 'offer') {
                 await pc.setRemoteDescription(new RTCSessionDescription(payload.sdp));
+                // Flush any queued ICE candidates that arrived before remote description
+                const queued = pendingCandidates.current[senderId] || [];
+                for (const c of queued) {
+                    try { await pc.addIceCandidate(new RTCIceCandidate(c)); } catch { }
+                }
+                pendingCandidates.current[senderId] = [];
                 const answer = await pc.createAnswer();
                 await pc.setLocalDescription(answer);
                 wsRef.current.send(JSON.stringify({
@@ -458,21 +559,54 @@ export default function VideoMeetingPage() {
                 }));
             } else if (payload.type === 'answer') {
                 await pc.setRemoteDescription(new RTCSessionDescription(payload.sdp));
+                // Flush queued ICE candidates
+                const queued = pendingCandidates.current[senderId] || [];
+                for (const c of queued) {
+                    try { await pc.addIceCandidate(new RTCIceCandidate(c)); } catch { }
+                }
+                pendingCandidates.current[senderId] = [];
             } else if (payload.candidate) {
-                await pc.addIceCandidate(new RTCIceCandidate(payload.candidate));
+                // Queue candidate if remote description not set yet
+                if (pc.remoteDescription && pc.remoteDescription.type) {
+                    try { await pc.addIceCandidate(new RTCIceCandidate(payload.candidate)); } catch { }
+                } else {
+                    pendingCandidates.current[senderId] = pendingCandidates.current[senderId] || [];
+                    pendingCandidates.current[senderId].push(payload.candidate);
+                }
             }
-        } catch (err) { console.error('Signal handling error:', err); }
+        } catch (err) { console.error('[WebRTC] Signal handling error:', err); }
     };
 
     const createPeerConnection = (userId, stream) => {
+        // Close existing connection if any
+        if (peerConnections.current[userId]) {
+            try { peerConnections.current[userId].close(); } catch { }
+        }
+        pendingCandidates.current[userId] = [];
         const pc = new RTCPeerConnection({
             iceServers: [
                 { urls: 'stun:stun.l.google.com:19302' },
-                { urls: 'stun:stun1.l.google.com:19302' }
-            ]
+                { urls: 'stun:stun1.l.google.com:19302' },
+                { urls: 'stun:stun2.l.google.com:19302' },
+                { urls: 'stun:stun3.l.google.com:19302' },
+                { urls: 'stun:stun4.l.google.com:19302' },
+                // Free TURN from Open Relay Project for users behind strict NAT
+                {
+                    urls: 'turn:openrelay.metered.ca:80',
+                    username: 'openrelayproject',
+                    credential: 'openrelayproject'
+                },
+                {
+                    urls: 'turn:openrelay.metered.ca:443',
+                    username: 'openrelayproject',
+                    credential: 'openrelayproject'
+                }
+            ],
+            iceCandidatePoolSize: 10
         });
         peerConnections.current[userId] = pc;
-        if (stream) stream.getTracks().forEach(track => pc.addTrack(track, stream));
+        const currentStream = stream || localStreamRef.current;
+        if (currentStream) currentStream.getTracks().forEach(track => pc.addTrack(track, currentStream));
 
         pc.onicecandidate = (event) => {
             if (event.candidate && wsRef.current?.readyState === WebSocket.OPEN) {
@@ -483,7 +617,15 @@ export default function VideoMeetingPage() {
             }
         };
         pc.ontrack = (event) => {
+            console.log('[WebRTC] Got remote track from', userId);
             setPeers(prev => ({ ...prev, [userId]: { stream: event.streams[0] } }));
+        };
+        pc.onconnectionstatechange = () => {
+            console.log('[WebRTC] Connection state with', userId, ':', pc.connectionState);
+            if (pc.connectionState === 'failed') {
+                console.warn('[WebRTC] Connection failed with', userId, '— attempting ICE restart');
+                pc.restartIce();
+            }
         };
         return pc;
     };
@@ -553,8 +695,6 @@ export default function VideoMeetingPage() {
             }
         }
     };
-
-    const leavingRef = useRef(false);
 
     // ── Nuclear media kill — guarantees camera/mic OFF ──
     const killAllMedia = () => {
@@ -689,86 +829,70 @@ export default function VideoMeetingPage() {
        ═══════════════════════════════════════════════ */
     const toggleCaptions = useCallback(() => {
         if (captionsOn) {
-            if (recognitionRef.current) recognitionRef.current.stop();
-            setCaptionsOn(false);
             captionsOnRef.current = false;
+            setCaptionsOn(false);
+            if (recognitionRestartTimerRef.current) { clearTimeout(recognitionRestartTimerRef.current); recognitionRestartTimerRef.current = null; }
+            if (recognitionRef.current) {
+                try { recognitionRef.current.onend = null; recognitionRef.current.onerror = null; } catch { }
+                try { recognitionRef.current.abort(); } catch { }
+                recognitionRef.current = null;
+            }
             toast('Captions off');
         } else {
-            try {
-                const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-                if (!SpeechRecognition) { toast.error('Speech recognition not supported in this browser'); return; }
-
-                const recognition = new SpeechRecognition();
-                recognition.continuous = true;
-                recognition.interimResults = true;
-                recognition.lang = 'en-US';
-
-                recognition.onresult = (event) => {
-                    let finalText = '';
-                    let interimText = '';
-                    for (let i = event.resultIndex; i < event.results.length; i++) {
-                        const transcript = event.results[i][0].transcript;
-                        if (event.results[i].isFinal) finalText += transcript;
-                        else interimText += transcript;
+            const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+            if (!SR) { toast.error('Speech recognition not supported in this browser'); return; }
+            captionsOnRef.current = true;
+            setCaptionsOn(true);
+            // Reuse the factory that was created during auto-start
+            if (startFreshRecognitionRef.current) {
+                startFreshRecognitionRef.current();
+            } else {
+                // Fallback: inline factory if auto-start somehow didn't run
+                const fn = () => {
+                    if (!captionsOnRef.current) return;
+                    if (recognitionRef.current) {
+                        try { recognitionRef.current.onend = null; recognitionRef.current.onerror = null; } catch { }
+                        try { recognitionRef.current.abort(); } catch { }
+                        recognitionRef.current = null;
                     }
-
-                    if (finalText) {
-                        // Store in transcript for later analysis
-                        const elapsed = (Date.now() - meetingStartTimeRef.current) / 1000;
-                        transcriptRef.current.push({
-                            speaker: user?.full_name || 'You',
-                            text: finalText,
-                            start_time: Math.max(0, elapsed - 5),
-                            end_time: elapsed,
-                            confidence: event.results[event.resultIndex]?.[0]?.confidence || 0.9,
-                        });
-                        setCaptions(prev => {
-                            const updated = [...prev, { text: finalText, speaker: user?.full_name || 'You', time: Date.now(), final: true }];
-                            return updated.slice(-8); // Keep last 8
-                        });
-                    } else if (interimText) {
-                        setCaptions(prev => {
-                            const filtered = prev.filter(c => c.final);
-                            return [...filtered, { text: interimText, speaker: user?.full_name || 'You', time: Date.now(), final: false }];
-                        });
-                    }
+                    const rec = new SR();
+                    rec.continuous = true; rec.interimResults = true; rec.lang = 'en-US';
+                    recognitionRef.current = rec;
+                    lastRecognitionActivityRef.current = Date.now();
+                    rec.onresult = (event) => {
+                        lastRecognitionActivityRef.current = Date.now();
+                        let finalText = ''; let interimText = '';
+                        for (let i = event.resultIndex; i < event.results.length; i++) {
+                            const t = event.results[i][0].transcript;
+                            if (event.results[i].isFinal) finalText += t; else interimText += t;
+                        }
+                        if (finalText) {
+                            const elapsed = (Date.now() - meetingStartTimeRef.current) / 1000;
+                            transcriptRef.current.push({ speaker: user?.full_name || 'You', text: finalText, start_time: Math.max(0, elapsed - 5), end_time: elapsed, confidence: 0.9 });
+                            setCaptions(prev => [...prev, { text: finalText, speaker: user?.full_name || 'You', time: Date.now(), final: true }].slice(-8));
+                        } else if (interimText) {
+                            setCaptions(prev => [...prev.filter(c => c.final), { text: interimText, speaker: user?.full_name || 'You', time: Date.now(), final: false }]);
+                        }
+                    };
+                    rec.onerror = (e) => {
+                        lastRecognitionActivityRef.current = Date.now();
+                        if (e.error === 'not-allowed' || e.error === 'service-not-allowed') { captionsOnRef.current = false; setCaptionsOn(false); return; }
+                        if (e.error === 'no-speech' || e.error === 'aborted') return;
+                        if (captionsOnRef.current) { if (recognitionRestartTimerRef.current) clearTimeout(recognitionRestartTimerRef.current); recognitionRestartTimerRef.current = setTimeout(() => fn(), 800); }
+                    };
+                    rec.onend = () => {
+                        if (!captionsOnRef.current) return;
+                        if (recognitionRestartTimerRef.current) clearTimeout(recognitionRestartTimerRef.current);
+                        recognitionRestartTimerRef.current = setTimeout(() => fn(), 250);
+                    };
+                    try { rec.start(); } catch { if (recognitionRestartTimerRef.current) clearTimeout(recognitionRestartTimerRef.current); recognitionRestartTimerRef.current = setTimeout(() => fn(), 500); }
                 };
-
-                recognition.onerror = (e) => {
-                    if (e.error === 'no-speech') return; // Normal — just silence
-                    if (e.error === 'aborted') return; // User toggled off
-                    console.warn('Speech recognition error:', e.error);
-                    // On network or other transient errors, try restarting after delay
-                    if (captionsOnRef.current && recognitionRef.current) {
-                        setTimeout(() => {
-                            if (captionsOnRef.current && recognitionRef.current) {
-                                try { recognitionRef.current.start(); } catch { /* already running */ }
-                            }
-                        }, 1000);
-                    }
-                };
-                recognition.onend = () => {
-                    // Auto-restart using ref (avoids stale closure)
-                    if (captionsOnRef.current && recognitionRef.current) {
-                        // Small delay to avoid rapid-fire restart issues
-                        setTimeout(() => {
-                            if (captionsOnRef.current && recognitionRef.current) {
-                                try { recognitionRef.current.start(); } catch { /* already running */ }
-                            }
-                        }, 300);
-                    }
-                };
-
-                recognition.start();
-                recognitionRef.current = recognition;
-                setCaptionsOn(true);
-                captionsOnRef.current = true;
-                toast.success('Captions on');
-            } catch (e) {
-                toast.error('Failed to start captions');
+                startFreshRecognitionRef.current = fn;
+                fn();
             }
+            toast.success('Captions on');
         }
-    }, [captionsOn, user]);
+    }, [captionsOn, user?.full_name]);
 
     /* ═══════════════════════════════════════════════
        RECORDING (MediaRecorder API)
@@ -1082,17 +1206,36 @@ export default function VideoMeetingPage() {
                         </div>
 
                         {/* Remote Peers */}
-                        {Object.entries(peers).map(([id, peer]) => (
-                            <div key={id} className="vm-video-tile">
-                                <VideoPlayer stream={peer.stream} />
-                                <div className="vm-video-label">
-                                    <span className="vm-video-name">
-                                        {participants.find(p => String(p.id) === String(id))?.name || `User ${id}`}
-                                        {raisedHands.has(participants.find(p => String(p.id) === String(id))?.name) && ' ✋'}
-                                    </span>
+                        {Object.entries(peers).map(([id, peer]) => {
+                            const peerInfo = participants.find(p => String(p.id) === String(id));
+                            const pcState = peerConnections.current[id]?.connectionState || 'new';
+                            const isConnecting = pcState === 'connecting' || pcState === 'new';
+                            return (
+                                <div key={id} className={`vm-video-tile${isConnecting ? '' : ''}`}>
+                                    {isConnecting && (
+                                        <div className="vm-connection-status connecting">
+                                            <span className="vm-connection-dot" />
+                                            Connecting…
+                                        </div>
+                                    )}
+                                    <VideoPlayer stream={peer.stream} />
+                                    <div className="vm-video-label">
+                                        <span className="vm-video-name">
+                                            {peerInfo?.name || `User ${id}`}
+                                            {raisedHands.has(peerInfo?.name) && ' ✋'}
+                                        </span>
+                                        {!isConnecting && (
+                                            <div className="vm-network-indicator">
+                                                <div className="vm-nq-bar" />
+                                                <div className="vm-nq-bar" />
+                                                <div className="vm-nq-bar" />
+                                                <div className="vm-nq-bar" />
+                                            </div>
+                                        )}
+                                    </div>
                                 </div>
-                            </div>
-                        ))}
+                            );
+                        })}
                     </div>
 
                     {/* ── Captions Overlay ── */}
@@ -1737,7 +1880,14 @@ export default function VideoMeetingPage() {
 const VideoPlayer = ({ stream }) => {
     const videoRef = useRef(null);
     useEffect(() => {
-        if (videoRef.current && stream) videoRef.current.srcObject = stream;
+        if (!videoRef.current) return;
+        if (stream) {
+            videoRef.current.srcObject = stream;
+            // Some browsers need a play() call after srcObject is set
+            videoRef.current.play().catch(() => {/* autoplay policy */ });
+        } else {
+            videoRef.current.srcObject = null;
+        }
     }, [stream]);
-    return <video ref={videoRef} autoPlay playsInline />;
+    return <video ref={videoRef} autoPlay playsInline style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />;
 };

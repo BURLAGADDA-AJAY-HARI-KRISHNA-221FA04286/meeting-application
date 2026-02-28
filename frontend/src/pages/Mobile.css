@@ -1,44 +1,41 @@
 /* ═══════════════════════════════════════════════════════
-   MeetingAI — Comprehensive Mobile RWD
-   Full responsive design for all pages & components
+   MeetingAI — Global Responsive System v3
+   Covers: all pages, all breakpoints, touch, notch, motion
    ═══════════════════════════════════════════════════════ */
 
-/* ── Performance: reduce heavy effects on mobile ── */
+/* ─────────────────────────────────────────
+   PERFORMANCE: Mobile perf class (set via JS on <html>)
+   App adds .mobile class on pointer:coarse detected
+──────────────────────────────────────────── */
 @media (max-width: 768px) {
+
+    /* Remove expensive GPU-heavy effects */
     * {
-        /* Disable backdrop-filter on mobile for massive perf gain */
         -webkit-backdrop-filter: none !important;
         backdrop-filter: none !important;
     }
 
-    .card,
-    .stat-card,
+    /* Solid backgrounds to replace glass */
     .sidebar,
     .topbar,
     .modal,
-    .tabs {
-        /* Use solid bg instead of glass on mobile */
-        background: var(--bg-secondary) !important;
+    .tabs,
+    .lp-nav,
+    .auth-card,
+    .tool-menu {
+        background: #090d1e !important;
     }
 
-    /* Reduce animation intensity */
-    .card:hover {
+    /* Disable 3D tilt on landing page — too heavy */
+    .lp-bcard,
+    .lp-card-3d {
         transform: none !important;
-        box-shadow: none !important;
-    }
-
-    .stat-card:hover {
-        transform: none !important;
-    }
-
-    /* Disable heavy pseudo-elements */
-    .card::before,
-    .stat-card::after {
-        display: none !important;
     }
 }
 
-/* ── Reduce motion for accessibility & performance ── */
+/* ─────────────────────────────────────────
+   REDUCE MOTION
+──────────────────────────────────────────── */
 @media (prefers-reduced-motion: reduce) {
 
     *,
@@ -47,15 +44,33 @@
         animation-duration: 0.01ms !important;
         animation-iteration-count: 1 !important;
         transition-duration: 0.01ms !important;
+        scroll-behavior: auto !important;
     }
 }
 
 /* ═══════════════════════════════════════
-   TABLET (769px – 1024px)
-   ═══════════════════════════════════════ */
-@media (max-width: 1024px) {
-    .page-container {
-        padding: 20px 24px 32px;
+   TABLET  (769px – 1100px)
+═══════════════════════════════════════ */
+@media (max-width: 1100px) {
+
+    /* App Layout */
+    .sidebar {
+        width: 60px !important;
+        overflow: hidden;
+    }
+
+    .sidebar .nav-label,
+    .sidebar .nav-item-text,
+    .sidebar-footer-text {
+        display: none !important;
+    }
+
+    .main-content {
+        margin-left: 60px !important;
+    }
+
+    .topbar {
+        left: 60px !important;
     }
 
     /* Dashboard */
@@ -67,7 +82,7 @@
         grid-template-columns: 1fr;
     }
 
-    /* Task Board */
+    /* Task board */
     .task-board-columns {
         flex-direction: column;
     }
@@ -77,92 +92,111 @@
         width: 100%;
     }
 
-    /* Analysis grid */
-    .analysis-grid {
-        grid-template-columns: 1fr;
-    }
-
-    /* Meeting Detail header */
+    /* Meeting detail */
     .detail-header {
         flex-direction: column;
         align-items: flex-start;
-        gap: 16px;
+        gap: 14px;
     }
 
     .detail-actions {
         width: 100%;
         flex-wrap: wrap;
     }
+
+    .analysis-grid {
+        grid-template-columns: 1fr;
+    }
+
+    /* Landing bento */
+    .lp-bento {
+        grid-template-columns: repeat(2, 1fr) !important;
+    }
+
+    .lp-bcard.w2 {
+        grid-column: span 2;
+    }
 }
 
 /* ═══════════════════════════════════════
-   MOBILE (max-width: 768px)
-   ═══════════════════════════════════════ */
+   MOBILE  (≤ 768px)
+═══════════════════════════════════════ */
 @media (max-width: 768px) {
+
+    /* ── App Layout ── */
+    .sidebar {
+        position: fixed;
+        left: 0;
+        top: 0;
+        bottom: 0;
+        width: 240px !important;
+        transform: translateX(-100%);
+        transition: transform 0.28s cubic-bezier(0.4, 0, 0.2, 1);
+        z-index: 300;
+        overflow: visible !important;
+    }
+
+    .sidebar.open {
+        transform: translateX(0);
+    }
+
+    .sidebar .nav-label,
+    .sidebar .nav-item-text,
+    .sidebar-footer-text {
+        display: flex !important;
+    }
+
+    /* Sidebar overlay backdrop */
+    .sidebar-backdrop {
+        display: none;
+        position: fixed;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.5);
+        z-index: 299;
+    }
+
+    .sidebar-backdrop.visible {
+        display: block;
+    }
+
+    .main-content {
+        margin-left: 0 !important;
+    }
+
+    .topbar {
+        left: 0 !important;
+    }
+
+    /* Mobile topbar — hamburger */
+    .mobile-menu-btn {
+        display: flex !important;
+    }
 
     /* ── Global ── */
     .page-container {
-        padding: 16px 14px 24px;
+        padding: 12px 12px 24px;
     }
 
     .page-header {
         flex-direction: column;
         align-items: stretch;
-        gap: 12px;
-        margin-bottom: 20px;
+        gap: 10px;
+        margin-bottom: 16px;
     }
 
     .page-title {
-        font-size: 1.4rem;
+        font-size: 1.35rem;
     }
 
     .page-subtitle {
-        font-size: 0.8rem;
+        font-size: 0.78rem;
     }
 
-    /* Grid system */
     .grid-2,
     .grid-3,
     .grid-4 {
         grid-template-columns: 1fr !important;
-        gap: 12px;
-    }
-
-    /* ── Layout / Sidebar ── */
-    .live-meeting-page {
-        flex-direction: column;
-    }
-
-    .live-content {
-        flex-direction: column;
-    }
-
-    .live-sidebar {
-        width: 100%;
-        height: 40vh;
-        border-left: none;
-        border-top: 1px solid var(--border-color);
-    }
-
-    .stage-area {
-        height: 50vh;
-    }
-
-    .live-header {
-        padding: 12px;
-        flex-wrap: wrap;
-        gap: 8px;
-    }
-
-    .live-header-actions {
-        width: 100%;
-        justify-content: space-between;
-        overflow-x: auto;
-    }
-
-    .live-header-actions button {
-        padding: 6px 12px;
-        font-size: 0.85rem;
+        gap: 10px;
     }
 
     /* ── Dashboard ── */
@@ -170,55 +204,47 @@
         grid-template-columns: repeat(2, 1fr);
     }
 
-    .dashboard-main-grid {
-        grid-template-columns: 1fr;
-    }
-
     .stat-value {
-        font-size: 1.5rem;
+        font-size: 1.45rem;
     }
 
     .stat-card {
-        padding: 16px;
+        padding: 14px;
     }
 
     .stat-icon {
-        width: 36px;
-        height: 36px;
+        width: 34px;
+        height: 34px;
     }
 
     .welcome-card h2 {
-        font-size: 1.1rem;
+        font-size: 1.05rem;
     }
 
-    .recent-meetings-list {
-        gap: 8px;
+    /* ── Auth ── */
+    .auth-page {
+        padding: 12px;
     }
 
-    /* ── Auth pages (Login/Register) ── */
     .auth-container {
-        padding: 16px;
+        padding: 0;
     }
 
     .auth-card {
-        padding: 24px 20px;
-        margin: 16px;
+        padding: 28px 18px;
+        margin: 12px;
         max-width: 100%;
+        border-radius: 20px;
     }
 
     .auth-title {
-        font-size: 1.5rem;
+        font-size: 1.4rem;
     }
 
-    .auth-header .auth-icon {
-        width: 56px;
-        height: 56px;
-    }
-
-    /* ── Meetings List Page ── */
+    /* ── Meetings List ── */
     .meetings-toolbar {
         flex-direction: column;
-        gap: 12px;
+        gap: 10px;
     }
 
     .meetings-toolbar .tabs {
@@ -234,7 +260,7 @@
     .meeting-list-item {
         flex-direction: column;
         align-items: flex-start;
-        gap: 12px;
+        gap: 10px;
     }
 
     .meeting-list-item .mli-actions {
@@ -246,54 +272,48 @@
         grid-template-columns: 1fr;
     }
 
-    /* ── Meeting Detail Page ── */
+    /* ── Meeting Detail ── */
     .detail-header {
         flex-direction: column;
         align-items: flex-start;
-        gap: 12px;
+        gap: 10px;
     }
 
     .detail-actions {
         width: 100%;
-        justify-content: flex-start;
         flex-wrap: wrap;
-        gap: 8px;
+        gap: 7px;
     }
 
     .detail-actions .btn {
         flex: 1;
         min-width: 0;
-        padding: 8px 12px;
-        font-size: 0.8rem;
+        padding: 8px 10px;
+        font-size: 0.78rem;
     }
 
     .analysis-grid {
         grid-template-columns: 1fr;
     }
 
-    .ac-summary-text {
-        font-size: 0.875rem;
-    }
-
-    /* Transcript card */
     .transcript-header {
         flex-direction: column;
         align-items: flex-start;
-        gap: 8px;
+        gap: 6px;
     }
 
-    /* AI Chat */
+    /* RAG chat */
     .rag-chat-container {
-        height: 60vh;
+        height: 58vh;
     }
 
     .rag-messages {
-        padding: 12px;
+        padding: 10px;
     }
 
     .rag-message {
-        max-width: 90%;
-        font-size: 0.85rem;
+        max-width: 91%;
+        font-size: 0.84rem;
     }
 
     .rag-input-row {
@@ -305,11 +325,11 @@
     }
 
     .rag-suggestion-btn {
-        font-size: 0.75rem;
+        font-size: 0.73rem;
         padding: 4px 10px;
     }
 
-    /* ── New Meeting Page ── */
+    /* ── New Meeting ── */
     .new-meeting-grid {
         grid-template-columns: 1fr;
     }
@@ -319,7 +339,7 @@
     }
 
     .meeting-type-card {
-        padding: 20px;
+        padding: 18px;
     }
 
     .room-details-grid {
@@ -328,7 +348,7 @@
 
     .shareable-link-row {
         flex-direction: column;
-        gap: 8px;
+        gap: 7px;
     }
 
     .shareable-link-row input {
@@ -338,12 +358,12 @@
     /* ── Task Board ── */
     .task-board-header {
         flex-direction: column;
-        gap: 12px;
+        gap: 10px;
     }
 
     .task-board-columns {
         flex-direction: column;
-        gap: 12px;
+        gap: 10px;
     }
 
     .task-board-column {
@@ -359,7 +379,7 @@
         flex-wrap: wrap;
     }
 
-    /* ── Settings Page ── */
+    /* ── Settings ── */
     .settings-modal {
         width: 100%;
         height: 100%;
@@ -371,12 +391,12 @@
     }
 
     .settings-sidebar {
-        width: 100%;
+        width: 100% !important;
         flex-direction: row;
         overflow-x: auto;
         border-right: none;
-        border-bottom: 1px solid var(--border-color);
-        padding: 8px;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+        padding: 6px;
     }
 
     .settings-tab {
@@ -387,105 +407,39 @@
         grid-template-columns: 1fr;
     }
 
-    /* ── Video Meeting Page ── */
-    .vm-container {
-        flex-direction: column;
-    }
-
-    .vm-main {
-        height: auto;
-        min-height: 50vh;
-    }
-
-    .vm-sidebar {
-        width: 100%;
-        height: 40vh;
-        border-left: none;
-        border-top: 1px solid var(--glass-border);
-    }
-
-    .vm-grid {
-        grid-template-columns: 1fr;
-    }
-
-    .vm-controls {
-        padding: 10px;
-        gap: 6px;
-        flex-wrap: wrap;
-    }
-
-    .vm-controls .btn {
-        padding: 8px 14px;
-        font-size: 0.8rem;
-    }
-
-    .vm-header {
-        padding: 8px 12px;
-        flex-wrap: wrap;
-        gap: 6px;
-    }
-
-    .vm-header-info h2 {
-        font-size: 1rem;
-    }
-
-    .vm-video-tile {
-        min-height: 180px;
-    }
-
-    .vm-participant-name {
-        font-size: 0.7rem;
-    }
-
-    /* Whiteboard mobile */
-    .whiteboard-toolbar {
-        flex-wrap: wrap;
-        gap: 4px;
-        padding: 6px;
-    }
-
-    /* Chat panel mobile */
-    .chat-panel {
-        width: 100%;
-    }
-
-    /* ── Join Meeting Page ── */
+    /* ── Join Meeting ── */
     .join-container {
-        padding: 16px;
+        padding: 14px;
     }
 
     .join-card {
-        padding: 24px 16px;
+        padding: 22px 14px;
     }
 
     /* ── Modals ── */
     .modal-overlay {
         padding: 0;
+        align-items: flex-end;
     }
 
     .modal {
         max-width: 100%;
-        border-radius: 0;
-        min-height: 100%;
-        padding: 24px 16px;
+        border-radius: 20px 20px 0 0;
+        min-height: 50vh;
+        padding: 22px 14px;
     }
 
     /* ── Tables ── */
     .table-container {
-        font-size: 0.8rem;
+        font-size: 0.78rem;
     }
 
     thead th,
     tbody td {
-        padding: 10px 12px;
+        padding: 9px 10px;
     }
 
-    /* ── Buttons group ── */
-    .btn-group {
-        flex-wrap: wrap;
-    }
-
-    /* ── Tabs overflow ── */
+    /* ── Tabs ── */
     .tabs {
         overflow-x: auto;
         -webkit-overflow-scrolling: touch;
@@ -499,18 +453,131 @@
     .tab {
         flex-shrink: 0;
     }
+
+    /* ── Landing Page ── */
+    .lp-nav {
+        padding: 12px 16px;
+    }
+
+    .lp-nav-links {
+        display: none;
+    }
+
+    /* hide desktop nav links */
+    .lp-h1 {
+        font-size: clamp(2rem, 8vw, 3.2rem);
+    }
+
+    .lp-sub {
+        font-size: 0.95rem;
+    }
+
+    .lp-cta-row {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .lpb {
+        width: 100%;
+        text-align: center;
+        justify-content: center;
+    }
+
+    .lp-stats {
+        grid-template-columns: repeat(2, 1fr);
+        gap: 10px;
+    }
+
+    .lp-bento {
+        grid-template-columns: 1fr !important;
+    }
+
+    .lp-bcard.w2 {
+        grid-column: span 1;
+    }
+
+    .lp-howgrid {
+        grid-template-columns: 1fr !important;
+    }
+
+    .lp-scene {
+        display: none;
+    }
+
+    /* hide 3D mockup — too large for mobile */
+    .lp-cta {
+        padding: 60px 16px;
+    }
+
+    .lp-footer-top {
+        flex-direction: column;
+        gap: 24px;
+    }
+
+    /* Video Meeting */
+    .vm-meeting-room {
+        font-size: 0.85rem;
+    }
+
+    .vm-topbar {
+        height: 40px;
+        padding: 0 10px;
+    }
+
+    .vm-meeting-title {
+        font-size: 0.75rem;
+    }
+
+    .vm-meeting-credentials {
+        display: none;
+    }
+
+    /* hide room code on mobile */
+    .vm-grid-area {
+        grid-template-columns: 1fr;
+    }
+
+    .vm-controls {
+        padding: 8px 10px;
+        gap: 5px;
+        flex-wrap: wrap;
+    }
+
+    .vm-tile {
+        border-radius: 10px;
+    }
+
+    .vm-sidebar-panel {
+        position: fixed;
+        inset: 0;
+        z-index: 300;
+        border-radius: 0;
+    }
+
+    /* Chat panel */
+    .chat-panel {
+        width: 100%;
+        border-radius: 0;
+    }
+
+    /* Whiteboard toolbar */
+    .whiteboard-toolbar {
+        flex-wrap: wrap;
+        gap: 3px;
+        padding: 5px;
+    }
 }
 
 /* ═══════════════════════════════════════
-   SMALL MOBILE (max-width: 480px)
-   ═══════════════════════════════════════ */
+   SMALL MOBILE  (≤ 480px)
+═══════════════════════════════════════ */
 @media (max-width: 480px) {
     .page-container {
-        padding: 12px 10px 20px;
+        padding: 10px 10px 20px;
     }
 
     .page-title {
-        font-size: 1.2rem;
+        font-size: 1.18rem;
     }
 
     .dashboard-stats.grid-4 {
@@ -518,147 +585,197 @@
     }
 
     .stat-value {
-        font-size: 1.3rem;
+        font-size: 1.25rem;
     }
 
     .card {
-        padding: 16px;
-        border-radius: var(--radius-md);
+        padding: 14px;
+        border-radius: 14px;
     }
 
     .btn {
-        padding: 8px 14px;
-        font-size: 0.8rem;
+        padding: 8px 13px;
+        font-size: 0.78rem;
     }
 
     .btn-lg {
-        padding: 10px 20px;
-        font-size: 0.85rem;
+        padding: 10px 18px;
+        font-size: 0.83rem;
     }
 
-    .detail-actions .btn {
-        padding: 6px 10px;
-        font-size: 0.75rem;
-    }
-
-    .detail-actions .btn svg {
-        width: 12px;
-        height: 12px;
-    }
-
-    /* Hide timer on very small screens */
-    .live-timer {
-        display: none;
-    }
-
-    /* Auth extra small */
     .auth-card {
-        padding: 20px 16px;
+        padding: 20px 14px;
+        margin: 8px;
     }
 
     .auth-title {
-        font-size: 1.3rem;
+        font-size: 1.25rem;
     }
 
-    /* Video meeting - single col always */
-    .vm-controls {
-        justify-content: center;
-    }
-
-    .vm-controls .btn span {
-        display: none;
-        /* icon only on small screens */
-    }
-
-    /* Meeting list */
-    .meeting-list-item {
-        padding: 12px;
-    }
-
-    /* Chat */
+    /* RAG */
     .rag-chat-container {
-        height: 55vh;
+        height: 54vh;
     }
 
     .rag-message {
         max-width: 95%;
     }
+
+    /* Landing */
+    .lp-h1 {
+        font-size: clamp(1.7rem, 9vw, 2.5rem);
+    }
+
+    .lp-stats {
+        grid-template-columns: 1fr 1fr;
+    }
+
+    /* Meeting list */
+    .meeting-list-item {
+        padding: 11px;
+    }
 }
 
 /* ═══════════════════════════════════════
-   LANDSCAPE MOBILE FIXES
-   ═══════════════════════════════════════ */
+   LANDSCAPE PHONE  (h < 500px)
+═══════════════════════════════════════ */
 @media (max-height: 500px) and (orientation: landscape) {
-    .vm-main {
-        height: 100vh;
-    }
-
-    .vm-sidebar {
+    .vm-sidebar-panel {
         display: none;
     }
 
     .vm-controls {
-        padding: 6px;
+        padding: 4px 8px;
+        gap: 4px;
     }
 
     .auth-card {
-        margin-top: 8px;
-        margin-bottom: 8px;
+        margin-top: 6px;
+        margin-bottom: 6px;
+        padding: 14px 16px;
+    }
+
+    .lp-hero {
+        padding-top: 60px;
     }
 }
 
 /* ═══════════════════════════════════════
    TOUCH DEVICE OPTIMIZATIONS
-   ═══════════════════════════════════════ */
+═══════════════════════════════════════ */
 @media (hover: none) and (pointer: coarse) {
 
-    /* Larger tap targets */
+    /* Larger tap targets — 44px minimum (Apple HIG) */
     .btn {
         min-height: 44px;
     }
 
     .tab {
         min-height: 40px;
-        padding: 8px 16px;
+        padding: 8px 14px;
     }
 
     .nav-item {
         min-height: 44px;
     }
 
-    /* Remove hover effects that cause sticky states on touch */
-    .card:hover {
-        border-color: var(--glass-border);
-        box-shadow: none;
+    .menu-item {
+        min-height: 44px;
     }
 
+    .sidebar-tab {
+        min-height: 44px;
+    }
+
+    /* Disable sticky hover states on touch */
+    .card:hover,
     .stat-card:hover {
-        transform: none;
+        transform: none !important;
+        box-shadow: none !important;
+        border-color: inherit !important;
     }
 
     .btn-primary:hover:not(:disabled) {
-        transform: none;
+        transform: none !important;
     }
 
-    .btn-secondary:hover:not(:disabled) {
-        background: rgba(99, 102, 241, 0.08);
+    .lp-bcard:hover {
+        transform: none !important;
+    }
+
+    /* Smooth native scroll */
+    .tabs,
+    .participant-list,
+    .rag-messages,
+    .sidebar-content {
+        -webkit-overflow-scrolling: touch;
     }
 }
 
 /* ═══════════════════════════════════════
-   SAFE AREA (notched phones)
-   ═══════════════════════════════════════ */
+   NOTCH / SAFE AREA (iOS, Pixel foldables)
+═══════════════════════════════════════ */
 @supports (padding: env(safe-area-inset-bottom)) {
+    body {
+        padding-left: env(safe-area-inset-left, 0px);
+        padding-right: env(safe-area-inset-right, 0px);
+    }
+
+    /* Fixed bottom bars */
+    .meeting-controls,
     .vm-controls {
-        padding-bottom: calc(10px + env(safe-area-inset-bottom));
+        padding-bottom: calc(10px + env(safe-area-inset-bottom, 0px));
     }
 
     .rag-input-row {
-        padding-bottom: calc(8px + env(safe-area-inset-bottom));
+        padding-bottom: calc(8px + env(safe-area-inset-bottom, 0px));
+    }
+
+    /* Fixed header — add top notch padding */
+    .live-header,
+    .vm-topbar {
+        padding-top: calc(8px + env(safe-area-inset-top, 0px));
+    }
+}
+
+/* ═══════════════════════════════════════
+   LARGE SCREENS  (≥ 1400px)
+═══════════════════════════════════════ */
+@media (min-width: 1400px) {
+    .page-container {
+        padding: 32px 40px 48px;
+    }
+
+    .dashboard-stats.grid-4 {
+        grid-template-columns: repeat(4, 1fr);
+    }
+
+    .lp-bento {
+        grid-template-columns: repeat(4, 1fr) !important;
+    }
+}
+
+/* ═══════════════════════════════════════
+   PRINT
+═══════════════════════════════════════ */
+@media print {
+
+    .sidebar,
+    .topbar,
+    .meeting-controls,
+    .vm-controls,
+    .live-header-actions,
+    .lp-nav-cta {
+        display: none !important;
     }
 
     body {
-        padding-left: env(safe-area-inset-left);
-        padding-right: env(safe-area-inset-right);
+        background: white !important;
+        color: black !important;
+    }
+
+    .card {
+        box-shadow: none !important;
+        border: 1px solid #ccc !important;
     }
 }

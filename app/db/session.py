@@ -52,15 +52,25 @@ elif _need_ssl:
 else:
     connect_args = {}
 
-async_engine = create_async_engine(
-    async_db_url,
-    echo=settings.debug,
-    pool_pre_ping=True,
-    pool_size=10,
-    max_overflow=20,
-    pool_recycle=300,   # Recycle connections every 5 min to prevent stale Neon connections
-    connect_args=connect_args
-)
+# Build engine kwargs based on dialect
+if "sqlite" in async_db_url:
+    from sqlalchemy.pool import NullPool
+    engine_kwargs = {
+        "echo": settings.debug,
+        "poolclass": NullPool,  # SQLite doesn't support pool sizing
+        "connect_args": connect_args,
+    }
+else:
+    engine_kwargs = {
+        "echo": settings.debug,
+        "pool_pre_ping": True,
+        "pool_size": 10,
+        "max_overflow": 20,
+        "pool_recycle": 300,   # Recycle every 5 min to prevent stale connections
+        "connect_args": connect_args,
+    }
+
+async_engine = create_async_engine(async_db_url, **engine_kwargs)
 
 AsyncSessionLocal = async_sessionmaker(
     bind=async_engine,
@@ -90,9 +100,13 @@ SessionLocal = sessionmaker(bind=engine, autocommit=False, autoflush=False)
 
 
 async def get_db() -> AsyncSession:
-    """Async database session dependency generator."""
+    """Async database session dependency generator with automatic rollback on error."""
     async with AsyncSessionLocal() as session:
         try:
             yield session
+            await session.commit()
+        except Exception:
+            await session.rollback()
+            raise
         finally:
             await session.close()

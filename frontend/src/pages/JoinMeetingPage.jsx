@@ -28,7 +28,7 @@ export default function JoinMeetingPage() {
         try {
             const res = await videoMeetingAPI.joinRoom(meetingCode.trim(), password.trim());
             toast.success(`Joining "${res.data.title}"...`);
-            navigate(`/video-meeting/${res.data.room_id}`);
+            navigate(`/meetings/room/${res.data.room_id}`);
         } catch (err) {
             toast.error(err.response?.data?.detail || 'Failed to join meeting');
         } finally {
@@ -57,7 +57,7 @@ export default function JoinMeetingPage() {
 
     const joinCreatedRoom = () => {
         if (createdRoom) {
-            navigate(`/video-meeting/${createdRoom.room_id}`);
+            navigate(`/meetings/room/${createdRoom.room_id}`);
         }
     };
 

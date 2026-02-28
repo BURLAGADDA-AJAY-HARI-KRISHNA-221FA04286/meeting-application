@@ -1598,3 +1598,309 @@
     flex: 1;
     text-align: left;
 }
+
+/* ══════════════════════════════════════════════
+   3D WEB EXPERIENCE — Premium Enhancements
+   ══════════════════════════════════════════════ */
+
+/* ── 3D Scene Container ── */
+.vm-meeting-room {
+    perspective: 1200px;
+}
+
+/* Animated background grid */
+.vm-meeting-room::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image:
+        linear-gradient(rgba(99, 102, 241, 0.04) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(99, 102, 241, 0.04) 1px, transparent 1px);
+    background-size: 60px 60px;
+    animation: vm-grid-drift 20s linear infinite;
+    pointer-events: none;
+    z-index: 0;
+}
+
+@keyframes vm-grid-drift {
+    from {
+        background-position: 0 0;
+    }
+
+    to {
+        background-position: 60px 60px;
+    }
+}
+
+/* ── Glowing ambient orbs in background ── */
+.vm-meeting-room::after {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background:
+        radial-gradient(ellipse 40% 30% at 15% 85%, rgba(99, 102, 241, 0.08) 0%, transparent 60%),
+        radial-gradient(ellipse 35% 25% at 85% 15%, rgba(139, 92, 246, 0.07) 0%, transparent 60%),
+        radial-gradient(ellipse 50% 40% at 50% 50%, rgba(59, 130, 246, 0.04) 0%, transparent 70%);
+    pointer-events: none;
+    z-index: 0;
+}
+
+/* ── Video tiles get 3D depth ── */
+.vm-video-grid {
+    transform-style: preserve-3d;
+}
+
+.vm-video-tile {
+    transform-style: preserve-3d;
+    transition: transform 0.4s cubic-bezier(0.34, 1.56, 0.64, 1),
+        border-color 0.3s ease,
+        box-shadow 0.3s ease;
+    will-change: transform;
+    backface-visibility: hidden;
+}
+
+.vm-video-tile:hover {
+    transform: translateZ(8px) scale(1.01);
+    border-color: rgba(99, 102, 241, 0.5);
+    box-shadow:
+        0 0 0 1px rgba(99, 102, 241, 0.2),
+        0 8px 32px rgba(0, 0, 0, 0.5),
+        0 0 60px rgba(99, 102, 241, 0.08);
+}
+
+/* ── Speaking glow indicator ── */
+.vm-video-tile.speaking {
+    border-color: rgba(52, 211, 153, 0.7) !important;
+    box-shadow:
+        0 0 0 2px rgba(52, 211, 153, 0.3),
+        0 0 30px rgba(52, 211, 153, 0.15),
+        inset 0 0 20px rgba(52, 211, 153, 0.05);
+    animation: vm-speaking-pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes vm-speaking-pulse {
+
+    0%,
+    100% {
+        box-shadow: 0 0 0 2px rgba(52, 211, 153, 0.3), 0 0 20px rgba(52, 211, 153, 0.1);
+    }
+
+    50% {
+        box-shadow: 0 0 0 3px rgba(52, 211, 153, 0.5), 0 0 40px rgba(52, 211, 153, 0.25);
+    }
+}
+
+/* ── Premium avatar with 3D depth ── */
+.vm-avatar-circle {
+    width: 80px;
+    height: 80px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, hsl(260, 80%, 55%) 0%, hsl(200, 80%, 50%) 50%, hsl(320, 70%, 55%) 100%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.6rem;
+    font-weight: 800;
+    color: white;
+    box-shadow:
+        0 4px 20px rgba(99, 102, 241, 0.4),
+        0 0 0 4px rgba(99, 102, 241, 0.15),
+        inset 0 -2px 8px rgba(0, 0, 0, 0.3);
+    transform: translateZ(4px);
+    text-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+}
+
+/* ── Neon controls bar ── */
+.vm-controls {
+    background: rgba(8, 10, 18, 0.92);
+    backdrop-filter: blur(24px) saturate(180%);
+    border-top: 1px solid rgba(99, 102, 241, 0.15);
+    box-shadow:
+        0 -1px 0 rgba(99, 102, 241, 0.08),
+        0 -20px 60px rgba(0, 0, 0, 0.4);
+}
+
+/* ── Glassmorphism ctrl buttons with depth ── */
+.vm-ctrl-btn {
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+    transition: all 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.vm-ctrl-btn:hover {
+    background: rgba(255, 255, 255, 0.12);
+    border-color: rgba(99, 102, 241, 0.3);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3), 0 0 20px rgba(99, 102, 241, 0.1), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+    transform: scale(1.08) translateY(-1px);
+}
+
+.vm-ctrl-btn.active {
+    background: rgba(99, 102, 241, 0.25);
+    border-color: rgba(99, 102, 241, 0.5);
+    box-shadow: 0 0 20px rgba(99, 102, 241, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+}
+
+.vm-ctrl-btn.leave {
+    background: linear-gradient(135deg, #ef4444, #dc2626);
+    border-color: rgba(239, 68, 68, 0.4);
+    box-shadow: 0 4px 20px rgba(239, 68, 68, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+}
+
+.vm-ctrl-btn.leave:hover {
+    background: linear-gradient(135deg, #f87171, #ef4444);
+    box-shadow: 0 6px 28px rgba(239, 68, 68, 0.5);
+    transform: scale(1.06) translateY(-2px);
+}
+
+/* ── Premium topbar with glassmorphism ── */
+.vm-topbar {
+    background: linear-gradient(to bottom,
+            rgba(0, 0, 0, 0.75) 0%,
+            rgba(0, 0, 0, 0.4) 60%,
+            transparent 100%);
+    backdrop-filter: blur(8px);
+}
+
+/* ── Neon sidebar ── */
+.vm-sidebar {
+    background: rgba(10, 12, 22, 0.97);
+    border-left: 1px solid rgba(99, 102, 241, 0.12);
+    box-shadow: -8px 0 40px rgba(0, 0, 0, 0.6), -1px 0 0 rgba(99, 102, 241, 0.08);
+}
+
+/* ── Screen share tile special 3D treatment ── */
+.vm-video-tile.screen-share-tile {
+    border-color: rgba(99, 102, 241, 0.4);
+    box-shadow:
+        0 0 0 1px rgba(99, 102, 241, 0.2),
+        0 8px 40px rgba(99, 102, 241, 0.15),
+        0 0 80px rgba(99, 102, 241, 0.06);
+}
+
+/* ── Caption overlay glassmorphism upgrade ── */
+.vm-caption-line {
+    background: rgba(0, 0, 0, 0.75);
+    backdrop-filter: blur(20px) saturate(150%);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+}
+
+/* ── Floating reaction 3D effect ── */
+.vm-floating-emoji {
+    filter: drop-shadow(0 4px 12px rgba(0, 0, 0, 0.5));
+    text-shadow: 0 0 20px rgba(255, 255, 255, 0.3);
+}
+
+/* ── Video label gradient upgrade ── */
+.vm-video-label {
+    background: linear-gradient(transparent, rgba(0, 0, 0, 0.85));
+    padding: 20px 12px 10px;
+}
+
+/* ── Neon participant avatar gradient pool ── */
+.vm-participant-avatar {
+    background: linear-gradient(135deg,
+            hsl(var(--avatar-hue, 260), 70%, 55%),
+            hsl(calc(var(--avatar-hue, 260) + 40), 60%, 50%));
+    box-shadow: 0 2px 12px rgba(99, 102, 241, 0.3);
+}
+
+/* ── Premium recording badge ── */
+.vm-recording-badge {
+    background: rgba(239, 68, 68, 0.2);
+    border: 1px solid rgba(239, 68, 68, 0.4);
+    box-shadow: 0 0 16px rgba(239, 68, 68, 0.2);
+}
+
+/* ── More menu 3D upgrade ── */
+.vm-more-menu {
+    background: rgba(12, 14, 26, 0.98);
+    border: 1px solid rgba(99, 102, 241, 0.15);
+    box-shadow:
+        0 20px 60px rgba(0, 0, 0, 0.7),
+        0 0 0 1px rgba(99, 102, 241, 0.08),
+        0 0 40px rgba(99, 102, 241, 0.05);
+}
+
+/* ── Poll option hover depth ── */
+.vm-poll-option:hover:not(:disabled) {
+    transform: translateX(3px);
+    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.3);
+}
+
+/* ── Sidebar header gradient ── */
+.vm-sidebar-header {
+    background: linear-gradient(to bottom, rgba(99, 102, 241, 0.06), transparent);
+    border-bottom: 1px solid rgba(99, 102, 241, 0.12);
+}
+
+/* ── Connection status overlay ── */
+.vm-connection-status {
+    position: absolute;
+    top: 8px;
+    left: 8px;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 3px 8px;
+    border-radius: 20px;
+    font-size: 0.65rem;
+    font-weight: 700;
+    letter-spacing: 0.03em;
+    z-index: 5;
+}
+
+.vm-connection-status.connected {
+    background: rgba(52, 211, 153, 0.15);
+    border: 1px solid rgba(52, 211, 153, 0.3);
+    color: #34d399;
+}
+
+.vm-connection-status.connecting {
+    background: rgba(245, 158, 11, 0.15);
+    border: 1px solid rgba(245, 158, 11, 0.3);
+    color: #f59e0b;
+    animation: vm-rec-pulse 1.5s ease-in-out infinite;
+}
+
+.vm-connection-dot {
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: currentColor;
+}
+
+/* ── Network quality indicator ── */
+.vm-network-indicator {
+    display: flex;
+    align-items: flex-end;
+    gap: 2px;
+    height: 12px;
+}
+
+.vm-nq-bar {
+    width: 3px;
+    border-radius: 1px;
+    background: rgba(52, 211, 153, 0.8);
+}
+
+.vm-nq-bar:nth-child(1) {
+    height: 4px;
+}
+
+.vm-nq-bar:nth-child(2) {
+    height: 7px;
+}
+
+.vm-nq-bar:nth-child(3) {
+    height: 10px;
+}
+
+.vm-nq-bar:nth-child(4) {
+    height: 13px;
+}
+
+.vm-nq-bar.inactive {
+    background: rgba(255, 255, 255, 0.15);
+}

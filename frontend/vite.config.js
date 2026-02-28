@@ -4,25 +4,31 @@ import react from '@vitejs/plugin-react'
 export default defineConfig({
   plugins: [react()],
   build: {
-    // ── Chunk splitting for faster loads ──
+    // ── Chunk splitting for parallel loading ──
     rollupOptions: {
       output: {
         manualChunks: {
-          'vendor-react': ['react', 'react-dom', 'react-router-dom'],
+          'react-core': ['react', 'react-dom'],
+          'react-router': ['react-router-dom'],
           'vendor-motion': ['framer-motion'],
           'vendor-charts': ['recharts'],
           'vendor-ui': ['lucide-react', 'react-hot-toast'],
         },
       },
+      treeshake: { moduleSideEffects: false },
     },
-    // ── Smaller output ──
     target: 'es2020',
     minify: 'esbuild',
     cssMinify: true,
-    chunkSizeWarningLimit: 800,
+    cssCodeSplit: true,        // each chunk gets its own CSS file
+    chunkSizeWarningLimit: 600,
     sourcemap: false,
+    // Drop console/debugger in production for speed
+    esbuildOptions: {
+      drop: ['console', 'debugger'],
+    },
   },
-  // ── Dev server speed ──
+  // ── Dev server ──
   server: {
     hmr: { overlay: true },
     warmup: {
@@ -31,13 +37,11 @@ export default defineConfig({
         './src/main.jsx',
         './src/pages/DashboardPage.jsx',
         './src/pages/MeetingsPage.jsx',
-        './src/pages/TaskBoardPage.jsx',
-        './src/pages/SettingsPage.jsx',
         './src/components/Layout.jsx',
       ],
     },
   },
-  // ── Optimize deps (pre-bundle for instant dev loads) ──
+  // ── Pre-bundle for instant dev loads ──
   optimizeDeps: {
     include: [
       'react', 'react-dom', 'react-router-dom',
@@ -45,3 +49,4 @@ export default defineConfig({
     ],
   },
 })
+

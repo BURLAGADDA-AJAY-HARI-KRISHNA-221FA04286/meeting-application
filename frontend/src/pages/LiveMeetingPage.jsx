@@ -95,6 +95,7 @@ export default function LiveMeetingPage() {
     const recognitionRestartTimerRef = useRef(null);
     const recognitionWatchdogRef = useRef(null);
     const lastRecognitionActivityRef = useRef(Date.now());
+    const isConnectedRef = useRef(false); // ← ref so closures always see current value
 
     // Keep camera stream ref in sync
     useEffect(() => {
@@ -106,8 +107,11 @@ export default function LiveMeetingPage() {
         captionsOnRef.current = captionsOn;
     }, [captionsOn]);
 
-    // Real-time speech recognition (auto-start)
+    // Real-time speech recognition — bulletproof auto-restart
     useEffect(() => {
+        // Keep ref in sync so closures always read current connection state
+        isConnectedRef.current = isConnected;
+
         const clearRestartTimer = () => {
             if (recognitionRestartTimerRef.current) {
                 clearTimeout(recognitionRestartTimerRef.current);
@@ -120,114 +124,142 @@ export default function LiveMeetingPage() {
                 recognitionWatchdogRef.current = null;
             }
         };
-        const scheduleRestart = (delayMs = 350) => {
-            clearRestartTimer();
-            if (!captionsOnRef.current || !isConnected) return;
-            recognitionRestartTimerRef.current = window.setTimeout(() => {
-                if (!captionsOnRef.current || !isConnected) return;
-                try { recognitionRef.current?.start(); } catch { }
-            }, delayMs);
+
+        // Always builds a FRESH SpeechRecognition instance — never re-calls .start() on a dead one
+        const startFresh = () => {
+            if (!captionsOnRef.current || !isConnectedRef.current) return;
+
+            // Tear down previous instance cleanly
+            if (recognitionRef.current) {
+                try { recognitionRef.current.onend = null; recognitionRef.current.onerror = null; recognitionRef.current.onresult = null; } catch { }
+                try { recognitionRef.current.abort(); } catch { }
+                recognitionRef.current = null;
+            }
+
+            const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+            if (!SR) return;
+
+            const rec = new SR();
+            rec.continuous = true;
+            rec.interimResults = true;
+            rec.lang = 'en-US';
+            rec.maxAlternatives = 1;
+            recognitionRef.current = rec;
+            lastRecognitionActivityRef.current = Date.now();
+
+            const speakerName = user?.full_name || 'You';
+
+            rec.onresult = (event) => {
+                lastRecognitionActivityRef.current = Date.now();
+                for (let i = event.resultIndex; i < event.results.length; i++) {
+                    const transcript = event.results[i][0].transcript.trim();
+                    if (!transcript) continue;
+                    if (event.results[i].isFinal) {
+                        const confidence = Number(event.results[i][0].confidence ?? 0.9);
+                        const entry = {
+                            speaker: speakerName,
+                            text: transcript,
+                            confidence,
+                            timestamp: new Date().toISOString(),
+                            final: true,
+                        };
+                        setSubtitles(prev => [...prev.slice(-50), entry]);
+                        try {
+                            if (wsRef.current?.readyState === WebSocket.OPEN) {
+                                wsRef.current.send(JSON.stringify({
+                                    type: 'TRANSCRIPTION',
+                                    speaker: entry.speaker,
+                                    text: entry.text,
+                                    confidence,
+                                }));
+                            }
+                        } catch { }
+                    } else {
+                        setSubtitles(prev => {
+                            const finals = prev.filter(s => s.final);
+                            return [...finals.slice(-50), { speaker: speakerName, text: transcript, final: false }];
+                        });
+                    }
+                }
+            };
+
+            rec.onerror = (e) => {
+                lastRecognitionActivityRef.current = Date.now();
+                // Permission denied — turn captions off, don't loop
+                if (e.error === 'not-allowed' || e.error === 'service-not-allowed') {
+                    setCaptionsOn(false);
+                    captionsOnRef.current = false;
+                    return;
+                }
+                // no-speech and aborted are normal — onend will handle restart
+                if (e.error === 'no-speech' || e.error === 'aborted') return;
+                // Transient errors (network, audio-capture on mobile) — schedule fresh restart
+                console.warn('[Captions] error:', e.error, '— restarting in 800ms');
+                clearRestartTimer();
+                recognitionRestartTimerRef.current = setTimeout(() => startFresh(), 800);
+            };
+
+            rec.onend = () => {
+                // Only auto-restart if captions are still on and we're connected
+                if (!captionsOnRef.current || !isConnectedRef.current) return;
+                clearRestartTimer();
+                recognitionRestartTimerRef.current = setTimeout(() => startFresh(), 250);
+            };
+
+            try {
+                rec.start();
+            } catch (e) {
+                // 'InvalidStateError' means already started — abort and retry
+                console.warn('[Captions] start failed:', e.message, '— retrying in 500ms');
+                recognitionRestartTimerRef.current = setTimeout(() => startFresh(), 500);
+            }
         };
 
         if (!isConnected || !captionsOn) {
             clearWatchdog();
             clearRestartTimer();
-            try { recognitionRef.current?.stop(); } catch { }
-            recognitionRef.current = null;
+            if (recognitionRef.current) {
+                try { recognitionRef.current.onend = null; recognitionRef.current.onerror = null; } catch { }
+                try { recognitionRef.current.abort(); } catch { }
+                recognitionRef.current = null;
+            }
             return;
         }
 
-        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-        if (!SpeechRecognition) return;
+        const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+        if (!SR) return;
 
-        const speakerName = user?.full_name || 'You';
-        const recognition = new SpeechRecognition();
-        recognition.continuous = true;
-        recognition.interimResults = true;
-        recognition.lang = 'en-US';
-        recognition.maxAlternatives = 1;
+        startFresh();
 
-        recognition.onresult = (event) => {
-            lastRecognitionActivityRef.current = Date.now();
-            for (let i = event.resultIndex; i < event.results.length; i++) {
-                const transcript = event.results[i][0].transcript.trim();
-                if (!transcript) continue;
-
-                if (event.results[i].isFinal) {
-                    const confidence = Number(event.results[i][0].confidence ?? 0.9);
-                    const entry = {
-                        speaker: speakerName,
-                        text: transcript,
-                        confidence,
-                        timestamp: new Date().toISOString(),
-                        final: true,
-                    };
-                    setSubtitles(prev => [...prev.slice(-50), entry]);
-                    try {
-                        if (wsRef.current?.readyState === WebSocket.OPEN) {
-                            wsRef.current.send(JSON.stringify({
-                                type: 'TRANSCRIPTION',
-                                speaker: entry.speaker,
-                                text: entry.text,
-                                confidence,
-                            }));
-                        }
-                    } catch { }
-                } else {
-                    setSubtitles(prev => {
-                        const finals = prev.filter(s => s.final);
-                        return [...finals.slice(-50), {
-                            speaker: speakerName,
-                            text: transcript,
-                            final: false,
-                        }];
-                    });
-                }
-            }
-        };
-
-        recognition.onerror = (e) => {
-            lastRecognitionActivityRef.current = Date.now();
-            if (e.error === 'service-not-allowed' || e.error === 'not-allowed') {
-                setCaptionsOn(false);
-                captionsOnRef.current = false;
-                return;
-            }
-            if (e.error !== 'no-speech' && e.error !== 'aborted') {
-                console.warn('Speech recognition error:', e.error);
-            }
-            if (captionsOnRef.current && isConnected) {
-                scheduleRestart(1000);
-            }
-        };
-
-        recognition.onend = () => {
-            if (captionsOnRef.current && isConnected) {
-                scheduleRestart(300);
-            }
-        };
-
-        recognitionRef.current = recognition;
-        lastRecognitionActivityRef.current = Date.now();
-        clearRestartTimer();
-        try { recognition.start(); } catch { }
-
+        // Watchdog: if no speech event for 20s, force a fresh restart
+        // (catches browser bugs where recognition silently dies)
         clearWatchdog();
-        recognitionWatchdogRef.current = window.setInterval(() => {
-            if (!captionsOnRef.current || !isConnected) return;
+        recognitionWatchdogRef.current = setInterval(() => {
+            if (!captionsOnRef.current || !isConnectedRef.current) return;
             const staleMs = Date.now() - lastRecognitionActivityRef.current;
-            if (staleMs > 45000) {
-                try { recognitionRef.current?.stop(); } catch { }
-                scheduleRestart(250);
-                lastRecognitionActivityRef.current = Date.now();
+            if (staleMs > 20000) {
+                console.warn('[Captions] watchdog: stale for', staleMs, 'ms — force restarting');
+                clearRestartTimer();
+                startFresh();
             }
-        }, 10000);
+        }, 8000);
+
+        // Resume captions when tab becomes visible again (mobile tab-switch)
+        const onVisible = () => {
+            if (document.visibilityState === 'visible' && captionsOnRef.current && isConnectedRef.current) {
+                clearRestartTimer();
+                recognitionRestartTimerRef.current = setTimeout(() => startFresh(), 400);
+            }
+        };
+        document.addEventListener('visibilitychange', onVisible);
 
         return () => {
             clearWatchdog();
             clearRestartTimer();
-            try { recognition.stop(); } catch { }
-            if (recognitionRef.current === recognition) {
+            document.removeEventListener('visibilitychange', onVisible);
+            if (recognitionRef.current) {
+                try { recognitionRef.current.onend = null; recognitionRef.current.onerror = null; } catch { }
+                try { recognitionRef.current.abort(); } catch { }
                 recognitionRef.current = null;
             }
         };
@@ -424,149 +456,149 @@ export default function LiveMeetingPage() {
         };
 
         const attachMessageHandler = () => {
-        ws.onmessage = async (event) => {
-            try {
-                const data = JSON.parse(event.data);
-                switch (data.type) {
-                    case 'JOIN':
-                        if (data.role) setMyRole(data.role);
-                        if (data.settings) setMeetingSettings(data.settings);
-                        setWaitingScreen(false);
-                        // Existing users call the new joiner
-                        if (data.user_id !== myUserId && cameraStreamRef.current) {
-                            setTimeout(() => initiateCall(data.user_id), 500);
+            ws.onmessage = async (event) => {
+                try {
+                    const data = JSON.parse(event.data);
+                    switch (data.type) {
+                        case 'JOIN':
+                            if (data.role) setMyRole(data.role);
+                            if (data.settings) setMeetingSettings(data.settings);
+                            setWaitingScreen(false);
+                            // Existing users call the new joiner
+                            if (data.user_id !== myUserId && cameraStreamRef.current) {
+                                setTimeout(() => initiateCall(data.user_id), 500);
+                            }
+                            break;
+                        case 'WAITING':
+                            setWaitingScreen(true);
+                            break;
+                        case 'ADMITTED':
+                            setWaitingScreen(false);
+                            toast.success('You have been admitted!');
+                            break;
+                        case 'WAITING_USER':
+                            if (myRole === 'host') {
+                                toast(`${data.name} is waiting to join`);
+                                setWaitingUsers(prev => [...prev, { id: data.user_id, name: data.name }]);
+                            }
+                            break;
+                        case 'SETTINGS_UPDATE':
+                            if (data.settings) setMeetingSettings(data.settings);
+                            break;
+                        case 'ROLE_UPDATE':
+                            if (data.user_id === myUserId && data.role) {
+                                setMyRole(data.role);
+                                toast.success(`Your role changed to ${data.role}`);
+                            }
+                            break;
+                        case 'KICK_USER':
+                            if (data.target_id === myUserId) {
+                                toast.error('You have been removed from the meeting');
+                                navigate('/meetings');
+                            }
+                            break;
+                        case 'signal':
+                            handleSignal(data.sender, data.payload);
+                            break;
+                        case 'LEAVE':
+                            if (peerConnections.current[data.user_id]) {
+                                peerConnections.current[data.user_id].close();
+                                delete peerConnections.current[data.user_id];
+                                setPeers(prev => {
+                                    const newPeers = { ...prev };
+                                    delete newPeers[data.user_id];
+                                    return newPeers;
+                                });
+                            }
+                            break;
+                        case 'CHAT':
+                            setChatMessages(p => [...p, {
+                                ...data,
+                                isMe: false, // Messages from WS are always from others
+                                timestamp: data.timestamp || new Date().toISOString()
+                            }]);
+                            if (userSettings.chat_sound) playDing();
+                            break;
+                        case 'participants':
+                            setParticipants(data.participants || []);
+                            break;
+                        case 'SUBTITLE':
+                            setSubtitles(prev => [...prev.slice(-50), data]);
+                            break;
+                        case 'HAND_RAISE': {
+                            const name = data.user_id === myUserId ? 'You' : (participants.find(p => p.id === data.user_id)?.name || 'Someone');
+                            if (userSettings.hand_raise_alert) playBeep();
+                            toast(`${name} ${data.is_raised ? 'raised' : 'lowered'} hand`);
+                            setHandRaiseQueue(prev =>
+                                data.is_raised
+                                    ? [...prev, { id: data.user_id, name }]
+                                    : prev.filter(h => h.id !== data.user_id)
+                            );
+                            break;
                         }
-                        break;
-                    case 'WAITING':
-                        setWaitingScreen(true);
-                        break;
-                    case 'ADMITTED':
-                        setWaitingScreen(false);
-                        toast.success('You have been admitted!');
-                        break;
-                    case 'WAITING_USER':
-                        if (myRole === 'host') {
-                            toast(`${data.name} is waiting to join`);
-                            setWaitingUsers(prev => [...prev, { id: data.user_id, name: data.name }]);
-                        }
-                        break;
-                    case 'SETTINGS_UPDATE':
-                        if (data.settings) setMeetingSettings(data.settings);
-                        break;
-                    case 'ROLE_UPDATE':
-                        if (data.user_id === myUserId && data.role) {
-                            setMyRole(data.role);
-                            toast.success(`Your role changed to ${data.role}`);
-                        }
-                        break;
-                    case 'KICK_USER':
-                        if (data.target_id === myUserId) {
-                            toast.error('You have been removed from the meeting');
-                            navigate('/meetings');
-                        }
-                        break;
-                    case 'signal':
-                        handleSignal(data.sender, data.payload);
-                        break;
-                    case 'LEAVE':
-                        if (peerConnections.current[data.user_id]) {
-                            peerConnections.current[data.user_id].close();
-                            delete peerConnections.current[data.user_id];
-                            setPeers(prev => {
-                                const newPeers = { ...prev };
-                                delete newPeers[data.user_id];
-                                return newPeers;
+                        case 'NOTE_UPDATE':
+                            if (data.sender !== myUserId) setSharedNote(data.noteText);
+                            break;
+                        case 'CURSOR_MOVE':
+                            if (data.sender !== myUserId) {
+                                setRemoteCursors(prev => ({
+                                    ...prev,
+                                    [data.sender]: { x: data.x, y: data.y, color: data.color || '#f00', name: data.sender }
+                                }));
+                            }
+                            break;
+                        case 'POLL_CREATE':
+                            setActivePoll({ question: data.question, options: data.options, votes: new Array(data.options.length).fill(0) });
+                            toast('New Poll Started!');
+                            if (sidebarTab !== 'polls') setSidebarTab('polls');
+                            break;
+                        case 'POLL_VOTE':
+                            setActivePoll(prev => {
+                                if (!prev) return prev;
+                                const newVotes = [...prev.votes];
+                                newVotes[data.option_index]++;
+                                return { ...prev, votes: newVotes };
                             });
-                        }
-                        break;
-                    case 'CHAT':
-                        setChatMessages(p => [...p, {
-                            ...data,
-                            isMe: false, // Messages from WS are always from others
-                            timestamp: data.timestamp || new Date().toISOString()
-                        }]);
-                        if (userSettings.chat_sound) playDing();
-                        break;
-                    case 'participants':
-                        setParticipants(data.participants || []);
-                        break;
-                    case 'SUBTITLE':
-                        setSubtitles(prev => [...prev.slice(-50), data]);
-                        break;
-                    case 'HAND_RAISE': {
-                        const name = data.user_id === myUserId ? 'You' : (participants.find(p => p.id === data.user_id)?.name || 'Someone');
-                        if (userSettings.hand_raise_alert) playBeep();
-                        toast(`${name} ${data.is_raised ? 'raised' : 'lowered'} hand`);
-                        setHandRaiseQueue(prev =>
-                            data.is_raised
-                                ? [...prev, { id: data.user_id, name }]
-                                : prev.filter(h => h.id !== data.user_id)
-                        );
-                        break;
+                            break;
+                        case 'QA_ASK':
+                            setQuestions(prev => [...prev, { ...data, myUpvote: false }]);
+                            toast('New Question Asked');
+                            break;
+                        case 'QA_UPVOTE':
+                            setQuestions(prev => prev.map(q =>
+                                q.id === data.question_id
+                                    ? { ...q, upvotes: (q.upvotes || 0) + 1, myUpvote: data.user_id === myUserId ? true : q.myUpvote }
+                                    : q
+                            ));
+                            break;
+                        case 'QA_DELETE':
+                            setQuestions(prev => prev.filter(q => q.id !== data.question_id));
+                            break;
+                        case 'REACTION':
+                            toast(data.emoji, { duration: 2000, style: { fontSize: '2rem' } });
+                            break;
+                        case 'CONFETTI':
+                            try {
+                                const confetti = (await import('canvas-confetti')).default;
+                                confetti({ particleCount: 100, spread: 70 });
+                            } catch { }
+                            break;
+                        case 'WHITEBOARD':
+                            // Handled by Whiteboard component's own listener
+                            break;
+                        case 'ERROR':
+                            toast.error(data.message || 'Meeting error');
+                            break;
+                        case 'PONG':
+                            // Heartbeat response
+                            break;
+                        default:
+                            break;
                     }
-                    case 'NOTE_UPDATE':
-                        if (data.sender !== myUserId) setSharedNote(data.noteText);
-                        break;
-                    case 'CURSOR_MOVE':
-                        if (data.sender !== myUserId) {
-                            setRemoteCursors(prev => ({
-                                ...prev,
-                                [data.sender]: { x: data.x, y: data.y, color: data.color || '#f00', name: data.sender }
-                            }));
-                        }
-                        break;
-                    case 'POLL_CREATE':
-                        setActivePoll({ question: data.question, options: data.options, votes: new Array(data.options.length).fill(0) });
-                        toast('New Poll Started!');
-                        if (sidebarTab !== 'polls') setSidebarTab('polls');
-                        break;
-                    case 'POLL_VOTE':
-                        setActivePoll(prev => {
-                            if (!prev) return prev;
-                            const newVotes = [...prev.votes];
-                            newVotes[data.option_index]++;
-                            return { ...prev, votes: newVotes };
-                        });
-                        break;
-                    case 'QA_ASK':
-                        setQuestions(prev => [...prev, { ...data, myUpvote: false }]);
-                        toast('New Question Asked');
-                        break;
-                    case 'QA_UPVOTE':
-                        setQuestions(prev => prev.map(q =>
-                            q.id === data.question_id
-                                ? { ...q, upvotes: (q.upvotes || 0) + 1, myUpvote: data.user_id === myUserId ? true : q.myUpvote }
-                                : q
-                        ));
-                        break;
-                    case 'QA_DELETE':
-                        setQuestions(prev => prev.filter(q => q.id !== data.question_id));
-                        break;
-                    case 'REACTION':
-                        toast(data.emoji, { duration: 2000, style: { fontSize: '2rem' } });
-                        break;
-                    case 'CONFETTI':
-                        try {
-                            const confetti = (await import('canvas-confetti')).default;
-                            confetti({ particleCount: 100, spread: 70 });
-                        } catch { }
-                        break;
-                    case 'WHITEBOARD':
-                        // Handled by Whiteboard component's own listener
-                        break;
-                    case 'ERROR':
-                        toast.error(data.message || 'Meeting error');
-                        break;
-                    case 'PONG':
-                        // Heartbeat response
-                        break;
-                    default:
-                        break;
+                } catch (err) {
+                    console.error('WS message parse error:', err);
                 }
-            } catch (err) {
-                console.error('WS message parse error:', err);
-            }
-        };
+            };
         };
 
         connectSocket();
