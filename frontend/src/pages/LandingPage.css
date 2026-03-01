@@ -1426,6 +1426,12 @@
     .lp-sidebar {
         display: none
     }
+
+    .lp-scene {
+        transform: scale(0.85);
+        transform-origin: top center;
+        margin-bottom: -100px;
+    }
 }
 
 @media(max-width:768px) {
@@ -1467,5 +1473,15 @@
 
     .t1 {
         grid-column: span 1
+    }
+
+    .lp-scene {
+        transform: scale(0.42);
+        transform-origin: top center;
+        margin-bottom: -250px;
+    }
+
+    .lp-h1 {
+        font-size: 2.8rem;
     }
 }

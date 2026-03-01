@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
+import { Mic, Video, Monitor, Hand, MessageSquare, Smile, Settings, PhoneOff } from 'lucide-react';
 import './LandingPage.css';
 
 /* ── Particle canvas ── */
@@ -222,7 +223,7 @@ export default function LandingPage() {
                                 <div className="lp-videos">
                                     <div className="lp-tile t1 speaking">
                                         <div className="lp-av" style={{ background: 'linear-gradient(135deg,#6366f1,#8b5cf6)' }}>AJ</div>
-                                        <div className="lp-tile-name"><span className="lp-mic">🎤</span>Ajay (You)</div>
+                                        <div className="lp-tile-name"><span className="lp-mic"><Mic size={10} /></span>Ajay (You)</div>
                                         <div className="lp-wave">
                                             <div className="lp-wb" /><div className="lp-wb" /><div className="lp-wb" /><div className="lp-wb" /><div className="lp-wb" />
                                         </div>
@@ -268,10 +269,10 @@ export default function LandingPage() {
                                     </div>
                                 </div>
                                 <div className="lp-controls">
-                                    {['🎤', '📹', '🖥️', '✋', '💬', '😊', '⚙️'].map((ic, i) => (
+                                    {[<Mic size={14} />, <Video size={14} />, <Monitor size={14} />, <Hand size={14} />, <MessageSquare size={14} />, <Smile size={14} />, <Settings size={14} />].map((ic, i) => (
                                         <div key={i} className="lp-ctrl">{ic}</div>
                                     ))}
-                                    <div className="lp-ctrl lp-ctrl-red">📵</div>
+                                    <div className="lp-ctrl lp-ctrl-red"><PhoneOff size={14} /></div>
                                 </div>
                             </div>
                         </div>
