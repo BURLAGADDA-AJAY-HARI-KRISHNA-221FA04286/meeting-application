@@ -63,17 +63,49 @@ export default function MeetingDetailPage() {
 
     const handleAnalyze = async (force = false) => {
         setAnalyzing(true);
-        const toastId = toast.loading('Running AI analysis... This takes 10-30 seconds');
+        const toastId = toast.loading('Running AI analysis in background... Please wait.');
         try {
             const res = await aiAPI.analyze(id, force);
-            setAnalysis(res.data);
-            toast.success('AI analysis complete! Check each tab for results.', { id: toastId });
-            // Reload meeting to update has_analysis flag
-            const mRes = await meetingsAPI.get(id);
-            setMeeting(mRes.data);
+
+            if (res.data.status === 'processing' && res.data.job_id) {
+                let attempts = 0;
+                const pollInterval = setInterval(async () => {
+                    attempts++;
+                    try {
+                        const statusRes = await aiAPI.jobStatus(res.data.job_id);
+                        const job = statusRes.data;
+                        
+                        if (job.status === 'completed') {
+                            clearInterval(pollInterval);
+                            const finalRes = await aiAPI.getResults(id);
+                            setAnalysis(finalRes.data);
+                            toast.success('AI analysis complete! Check tabs for results.', { id: toastId });
+                            const mRes = await meetingsAPI.get(id);
+                            setMeeting(mRes.data);
+                            setAnalyzing(false);
+                        } else if (job.status === 'failed') {
+                            clearInterval(pollInterval);
+                            toast.error(`Analysis failed: ${job.error || 'Unknown error'}`, { id: toastId });
+                            setAnalyzing(false);
+                        } else if (attempts > 60) {
+                            clearInterval(pollInterval);
+                            toast.error('Analysis is taking too long. Check back later.', { id: toastId });
+                            setAnalyzing(false);
+                        }
+                        // If 'pending' or 'processing', do nothing, just wait.
+                    } catch (err) {
+                        console.error('Job polling error', err);
+                    }
+                }, 2000);
+            } else {
+                setAnalysis(res.data);
+                toast.success('AI analysis complete! Check each tab for results.', { id: toastId });
+                const mRes = await meetingsAPI.get(id);
+                setMeeting(mRes.data);
+                setAnalyzing(false);
+            }
         } catch (err) {
-            toast.error(err.response?.data?.detail || 'Analysis failed. Check if Gemini API key is configured.', { id: toastId });
-        } finally {
+            toast.error(err.response?.data?.detail || 'Analysis failed.', { id: toastId });
             setAnalyzing(false);
         }
     };

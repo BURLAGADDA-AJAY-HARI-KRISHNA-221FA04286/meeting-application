@@ -159,6 +159,8 @@ async def create_meeting(
         await db.commit()
         logger.info("Created meeting %d with %d subtitle lines", meeting.id, len(lines))
 
+    from app.core.redis import invalidate_cache
+    await invalidate_cache(f"user:{current_user.id}:")
     return await _enrich_meeting(db, meeting, include_analysis=False)
 
 
@@ -172,6 +174,15 @@ async def list_meetings(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    from app.core.redis import get_cache, set_cache
+    
+    # Try cache first (only if no search or status filter is applied, for simplicity)
+    cache_key = f"user:{current_user.id}:meetings:{skip}:{limit}"
+    if not search and not status:
+        cached = await get_cache(cache_key)
+        if cached:
+            return cached
+
     # Single query with subquery counts — no N+1
     sub_count = (
         select(func.count(Subtitle.id))
@@ -222,20 +233,25 @@ async def list_meetings(
     result = await db.execute(stmt)
     rows = result.all()
 
-    return [
+    meetings_list = [
         {
             "id": r.id,
             "user_id": r.user_id,
             "title": r.title,
             "consent_given": r.consent_given,
-            "created_at": r.created_at,
-            "ended_at": r.ended_at,
+            "created_at": r.created_at.isoformat(),
+            "ended_at": r.ended_at.isoformat() if r.ended_at else None,
             "subtitle_count": r.subtitle_count,
             "task_count": r.task_count,
             "has_analysis": bool(r.has_analysis),
         }
         for r in rows
     ]
+
+    if not search and not status:
+        await set_cache(cache_key, meetings_list, ttl=300)
+
+    return meetings_list
 
 
 
@@ -247,6 +263,12 @@ async def dashboard(
 ):
     uid = current_user.id
     from sqlalchemy import text
+    from app.core.redis import get_cache, set_cache
+
+    cache_key = f"user:{uid}:dashboard_stats"
+    cached = await get_cache(cache_key)
+    if cached:
+        return cached
 
     # ── QUERY 1: All stats in ONE roundtrip (Optimized O(N) pass) ──
     stats_sql = text("""
@@ -302,14 +324,14 @@ async def dashboard(
     recent_enriched = [
         {
             "id": r.id, "user_id": r.user_id, "title": r.title,
-            "consent_given": r.consent_given, "created_at": r.created_at,
-            "ended_at": r.ended_at, "subtitle_count": r.subtitle_count,
+            "consent_given": r.consent_given, "created_at": r.created_at.isoformat(),
+            "ended_at": r.ended_at.isoformat() if r.ended_at else None, "subtitle_count": r.subtitle_count,
             "task_count": r.task_count, "has_analysis": bool(r.has_analysis),
         }
         for r in recent_rows
     ]
 
-    return {
+    response_data = {
         "total_meetings": stats_row.total_meetings or 0,
         "total_tasks": stats_row.total_tasks or 0,
         "tasks_todo": stats_row.tasks_todo or 0,
@@ -320,6 +342,9 @@ async def dashboard(
         "risk_count": 0,
         "analyzed_meetings": stats_row.analyzed_meetings or 0,
     }
+
+    await set_cache(cache_key, response_data, ttl=60)
+    return response_data
 
 
 # ── Get Single Meeting (full detail) ─────────────────────
@@ -387,6 +412,8 @@ async def update_meeting(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    from app.core.redis import invalidate_cache
+
     result = await db.execute(
         select(Meeting).filter(Meeting.id == meeting_id, Meeting.user_id == current_user.id)
     )
@@ -403,6 +430,8 @@ async def update_meeting(
         
     await db.commit()
     await db.refresh(meeting)
+
+    await invalidate_cache(f"user:{current_user.id}:")
     return await _enrich_meeting(db, meeting, include_analysis=True)
 
 
@@ -413,6 +442,8 @@ async def delete_meeting(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    from app.core.redis import invalidate_cache
+
     result = await db.execute(
         select(Meeting).filter(Meeting.id == meeting_id, Meeting.user_id == current_user.id)
     )
@@ -424,6 +455,8 @@ async def delete_meeting(
     logger.info("Deleting meeting %d for user %d", meeting_id, current_user.id)
     await db.delete(meeting)
     await db.commit()
+
+    await invalidate_cache(f"user:{current_user.id}:")
 
 
 # ── Upload Video/Audio → Transcript ──────────────────────
@@ -456,8 +489,11 @@ def _matches_media_magic(content_type: str, chunk: bytes) -> bool:
     return True
 
 
+from celery import shared_task
+
+@shared_task
 def _transcribe_with_gemini(file_path: str, mime_type: str) -> str:
-    """Use Gemini to transcribe audio/video file (sync, runs in thread)."""
+    """Use Gemini to transcribe audio/video file (sync, runs in worker)."""
     from google import genai
     from app.core.config import settings
 
@@ -620,6 +656,8 @@ async def upload_media(
         except Exception as e:
             logger.error("Auto-analysis failed for meeting %d: %s", meeting.id, e)
 
+    from app.core.redis import invalidate_cache
+    await invalidate_cache(f"user:{current_user.id}:")
     return await _enrich_meeting(db, meeting, include_analysis=True)
 
 

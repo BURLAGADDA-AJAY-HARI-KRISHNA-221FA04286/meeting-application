@@ -216,6 +216,7 @@ export const aiAPI = {
     analyze: (meetingId, force = false) => api.post(`/ai/${meetingId}/analyze?force=${force}`),
     getResults: (meetingId) => api.get(`/ai/${meetingId}/results`),
     ragQuery: (meetingId, question) => api.post(`/ai/${meetingId}/rag-query`, { question }),
+    jobStatus: (jobId) => api.get(`/ai/job-status/${jobId}`),
 };
 
 // ── Tasks ──

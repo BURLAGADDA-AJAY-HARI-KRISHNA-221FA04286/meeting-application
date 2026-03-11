@@ -143,10 +143,21 @@ async def lifespan(app: FastAPI):
     except Exception as exc:
         logger.warning("Database initialization skipped: %s", exc)
 
+    try:
+        from app.core.redis import init_redis
+        await init_redis()
+    except Exception as e:
+        logger.error(f"Failed to init Redis: {e}")
+
     yield  # Application runs here
 
     # Shutdown
     logger.info("Application shutting down...")
+    try:
+        from app.core.redis import close_redis
+        await close_redis()
+    except Exception as e:
+        logger.error(f"Failed to close Redis: {e}")
 
 
 # App Factory

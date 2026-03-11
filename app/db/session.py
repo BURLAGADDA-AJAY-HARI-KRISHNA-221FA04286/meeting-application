@@ -64,8 +64,8 @@ else:
     engine_kwargs = {
         "echo": settings.debug,
         "pool_pre_ping": True,
-        "pool_size": 10,
-        "max_overflow": 20,
+        "pool_size": 20,
+        "max_overflow": 40,
         "pool_recycle": 300,   # Recycle every 5 min to prevent stale connections
         "connect_args": connect_args,
     }

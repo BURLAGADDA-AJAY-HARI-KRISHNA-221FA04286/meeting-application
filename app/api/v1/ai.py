@@ -7,13 +7,16 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+import uuid
 from app.db.session import get_db
 from app.api.deps import get_current_user
 from app.models.user import User
 from app.models.meeting import Meeting
 from app.models.ai_result import AIResult
+from app.models.job import Job
 from app.ai.orchestrator import AIAgentOrchestrator
 from app.ai.rag import rag_store
+from app.tasks.ai_tasks import analyze_meeting_background
 
 router = APIRouter(prefix="/ai", tags=["ai"])
 logger = logging.getLogger("meetingai.ai")
@@ -26,6 +29,7 @@ class RAGQueryRequest(BaseModel):
 
 class AnalyzeResponse(BaseModel):
     status: str
+    job_id: str | None = None
     summary: dict | None = None
     decisions: dict | None = None
     actions: dict | None = None
@@ -75,26 +79,45 @@ async def analyze_meeting(
         }
 
     try:
-        orchestrator = AIAgentOrchestrator(db, meeting_id)
-        # Run pipeline (async)
-        result = await orchestrator.run_pipeline()
+        job_id = f"ai_job_{uuid.uuid4().hex[:8]}"
+        new_job = Job(
+            id=job_id,
+            type="ai_analysis",
+            status="pending",
+            result_id=meeting_id
+        )
+        db.add(new_job)
+        await db.commit()
 
-        # Invalidate RAG cache so it rebuilds with latest data
-        rag_store.invalidate(meeting_id)
+        # Enqueue celery background task
+        analyze_meeting_background.delay(meeting_id, job_id)
 
         return {
-            "status": "success",
-            "summary": result.summary_json,
-            "decisions": result.decisions_json,
-            "actions": result.actions_json,
-            "risks": result.risks_json,
-            "sentiment": result.sentiment_json,
+            "status": "processing",
+            "job_id": job_id
         }
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
-        logger.error("AI pipeline failed for meeting %d: %s", meeting_id, e, exc_info=True)
-        raise HTTPException(status_code=500, detail=f"AI processing failed: {e}")
+        logger.error("Failed to queue AI pipeline for meeting %d: %s", meeting_id, e, exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to start AI processing: {e}")
+
+# ── Get Job Status ───────────────────────────────────────
+@router.get("/job-status/{job_id}")
+async def get_job_status(job_id: str, db: AsyncSession = Depends(get_db)):
+    """Retrieve status of background AI job."""
+    result = await db.execute(select(Job).filter(Job.id == job_id))
+    job = result.scalar_one_or_none()
+    
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+        
+    return {
+        "job_id": job.id,
+        "type": job.type,
+        "status": job.status,
+        "progress": job.progress,
+        "result_id": job.result_id,
+        "error": job.error
+    }
 
 
 # ── Get AI Results ───────────────────────────────────────
