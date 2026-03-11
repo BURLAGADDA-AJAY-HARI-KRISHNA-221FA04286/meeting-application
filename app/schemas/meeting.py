@@ -69,6 +69,9 @@ class DashboardStats(BaseModel):
     analyzed_meetings: int = 0
     avg_meeting_duration: float = 0.0
     longest_meeting: float = 0.0
+    meeting_frequency: dict[str, Any] = {}  # {this_week, avg_per_day, peak_day}
+    keyword_trends: list[dict] = []  # [{word, count}]
+    calendar_heatmap: dict[str, int] = {}  # {"Mon": 3, "Tue": 5, ...}
 
 
 class SpeakerInsights(BaseModel):
@@ -76,9 +79,23 @@ class SpeakerInsights(BaseModel):
     messages: int = 0
     questions_asked: int = 0
     interruptions: int = 0
+    words_per_minute: float = 0
+    participation_score: int = 0
+
+
+class SilentGap(BaseModel):
+    timestamp: float = 0
+    duration: float = 0
+
+
+class HighlightedItem(BaseModel):
+    text: str
+    type: str  # "number", "deadline", "budget", "date"
+    timestamp: float = 0
+
 
 class MeetingStats(BaseModel):
-    """Per-meeting statistics."""
+    """Per-meeting statistics — comprehensive analytics engine."""
     meeting_id: int
     subtitle_count: int
     task_count: int
@@ -91,3 +108,29 @@ class MeetingStats(BaseModel):
     engagement_score: int = 0
     heatmap: list[int] = []
     rule_based_decisions: list[str] = []
+
+    # Efficiency report
+    active_speaking_seconds: float = 0
+    silent_seconds: float = 0
+    efficiency_score: int = 0
+
+    # Auto title suggestion
+    suggested_title: str = ""
+    keyword_cloud: list[dict] = []  # [{word, count}]
+
+    # Speaker turns
+    total_speaker_turns: int = 0
+    longest_monologue_speaker: str = ""
+    longest_monologue_seconds: float = 0
+
+    # Silent gaps
+    silent_gaps: list[SilentGap] = []
+
+    # Questions
+    questions: list[str] = []
+
+    # Highlights (numbers, dates, budgets, deadlines)
+    highlights: list[HighlightedItem] = []
+
+    # Conversation speed per speaker
+    conversation_speed: dict[str, float] = {}  # speaker -> words/min

@@ -644,7 +644,118 @@ export default function MeetingDetailPage() {
                                 </motion.div>
                             )}
 
+                            {/* ═══ ANALYTICS TAB (Computed, no LLM) ═══ */}
+                            {activeTab === 'summary' && meetingStats?.data && (
+                                <motion.div key="analytics-inline" {...fadeUp} transition={{ duration: 0.2, delay: 0.15 }}>
+                                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '16px', marginTop: '16px' }}>
 
+                                        {/* Efficiency Report */}
+                                        <div className="card analysis-card" style={{ padding: '20px' }}>
+                                            <div className="ac-title" style={{ marginBottom: '12px' }}><Clock size={14} style={{ color: '#f59e0b' }} /> Efficiency Report</div>
+                                            <div style={{ display: 'flex', justifyContent: 'center', position: 'relative', width: '80px', height: '80px', margin: '0 auto 12px' }}>
+                                                <svg viewBox="0 0 80 80" style={{ width: '80px', height: '80px' }}>
+                                                    <circle cx="40" cy="40" r="34" fill="none" stroke="rgba(99,102,241,0.1)" strokeWidth="8" />
+                                                    <circle cx="40" cy="40" r="34" fill="none" stroke="#6366f1" strokeWidth="8" strokeLinecap="round"
+                                                        strokeDasharray={`${(meetingStats.data.efficiency_score || 0) * 2.136} 213.6`}
+                                                        transform="rotate(-90 40 40)" />
+                                                </svg>
+                                                <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%,-50%)', fontSize: '1rem', fontWeight: 700, color: '#6366f1' }}>{meetingStats.data.efficiency_score}%</div>
+                                            </div>
+                                            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', textAlign: 'center' }}>
+                                                Active: {Math.round((meetingStats.data.active_speaking_seconds || 0) / 60)}m
+                                                &nbsp;•&nbsp; Silent: {Math.round((meetingStats.data.silent_seconds || 0) / 60)}m
+                                            </div>
+                                        </div>
+
+                                        {/* Keyword Cloud */}
+                                        {(meetingStats.data.keyword_cloud || []).length > 0 && (
+                                            <div className="card analysis-card" style={{ padding: '20px' }}>
+                                                <div className="ac-title" style={{ marginBottom: '12px' }}><Sparkles size={14} style={{ color: '#8b5cf6' }} /> Keyword Cloud</div>
+                                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '5px', maxHeight: '120px', overflow: 'hidden' }}>
+                                                    {meetingStats.data.keyword_cloud.slice(0, 25).map((kw, i) => {
+                                                        const max = meetingStats.data.keyword_cloud[0]?.count || 1;
+                                                        const s = Math.max(0.65, Math.min(1.15, 0.65 + (kw.count / max) * 0.5));
+                                                        return <span key={i} style={{ fontSize: `${s}rem`, padding: '2px 6px', borderRadius: '6px', background: 'rgba(99,102,241,0.08)', color: '#6366f1', fontWeight: kw.count > max * 0.5 ? 600 : 400 }}>{kw.word}</span>;
+                                                    })}
+                                                </div>
+                                                {meetingStats.data.suggested_title && (
+                                                    <div style={{ marginTop: '10px', padding: '8px', borderRadius: '6px', background: 'rgba(16,185,129,0.06)', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                                                        💡 Suggested title: <strong style={{ color: 'var(--text-primary)' }}>{meetingStats.data.suggested_title}</strong>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        )}
+
+                                        {/* Speaker Turns */}
+                                        <div className="card analysis-card" style={{ padding: '20px' }}>
+                                            <div className="ac-title" style={{ marginBottom: '12px' }}><RefreshCw size={14} style={{ color: '#ec4899' }} /> Speaker Turns</div>
+                                            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                                <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 10px', borderRadius: '6px', background: 'rgba(99,102,241,0.05)' }}>
+                                                    <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Total Turns</span>
+                                                    <span style={{ fontWeight: 700, color: '#6366f1' }}>{meetingStats.data.total_speaker_turns}</span>
+                                                </div>
+                                                {meetingStats.data.longest_monologue_speaker && (
+                                                    <div style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 10px', borderRadius: '6px', background: 'rgba(239,68,68,0.05)' }}>
+                                                        <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Longest Monologue</span>
+                                                        <span style={{ fontWeight: 600, color: '#ef4444', fontSize: '0.8rem' }}>{meetingStats.data.longest_monologue_speaker} ({Math.round(meetingStats.data.longest_monologue_seconds)}s)</span>
+                                                    </div>
+                                                )}
+                                                {/* Conversation Speed */}
+                                                {Object.entries(meetingStats.data.conversation_speed || {}).map(([spk, wpm]) => (
+                                                    <div key={spk} style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 10px', fontSize: '0.78rem' }}>
+                                                        <span style={{ color: 'var(--text-muted)' }}>{spk}</span>
+                                                        <span style={{ color: 'var(--text-secondary)' }}>{wpm} wpm</span>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {/* Questions & Highlights Row */}
+                                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginTop: '16px' }}>
+                                        {/* Questions */}
+                                        {(meetingStats.data.questions || []).length > 0 && (
+                                            <div className="card analysis-card" style={{ padding: '20px' }}>
+                                                <div className="ac-title" style={{ marginBottom: '10px' }}><MessageSquare size={14} style={{ color: '#6366f1' }} /> Questions Asked ({meetingStats.data.questions.length})</div>
+                                                <ul className="ac-list" style={{ maxHeight: '150px', overflowY: 'auto' }}>
+                                                    {meetingStats.data.questions.map((q, i) => (
+                                                        <li key={i} style={{ fontSize: '0.82rem' }}>{q}</li>
+                                                    ))}
+                                                </ul>
+                                            </div>
+                                        )}
+
+                                        {/* Smart Highlights */}
+                                        {(meetingStats.data.highlights || []).length > 0 && (
+                                            <div className="card analysis-card" style={{ padding: '20px' }}>
+                                                <div className="ac-title" style={{ marginBottom: '10px' }}><AlertCircle size={14} style={{ color: '#ef4444' }} /> Smart Highlights</div>
+                                                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', maxHeight: '150px', overflowY: 'auto' }}>
+                                                    {meetingStats.data.highlights.map((h, i) => (
+                                                        <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '6px 10px', borderRadius: '6px', background: h.type === 'budget' ? 'rgba(16,185,129,0.06)' : h.type === 'deadline' ? 'rgba(239,68,68,0.06)' : h.type === 'date' ? 'rgba(99,102,241,0.06)' : 'rgba(245,158,11,0.06)' }}>
+                                                            <span className="badge" style={{ fontSize: '0.6rem', padding: '2px 6px', background: h.type === 'budget' ? '#10b981' : h.type === 'deadline' ? '#ef4444' : h.type === 'date' ? '#6366f1' : '#f59e0b', color: '#fff' }}>{h.type}</span>
+                                                            <span style={{ fontSize: '0.82rem' }}>{h.text}</span>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    {/* Silent Gaps */}
+                                    {(meetingStats.data.silent_gaps || []).length > 0 && (
+                                        <div className="card analysis-card" style={{ padding: '20px', marginTop: '16px' }}>
+                                            <div className="ac-title" style={{ marginBottom: '10px' }}><Clock size={14} style={{ color: '#f59e0b' }} /> Silent Gaps Detected ({meetingStats.data.silent_gaps.length})</div>
+                                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                                                {meetingStats.data.silent_gaps.map((g, i) => (
+                                                    <span key={i} className="badge" style={{ padding: '4px 10px', background: 'rgba(245,158,11,0.08)', color: '#f59e0b', fontSize: '0.78rem' }}>
+                                                        {Math.floor(g.timestamp / 60)}:{String(Math.floor(g.timestamp % 60)).padStart(2, '0')} — {g.duration}s
+                                                    </span>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    )}
+                                </motion.div>
+                            )}
 
                             {/* ═══ AI CHAT (RAG) TAB ═══ */}
                             {activeTab === 'chat' && (

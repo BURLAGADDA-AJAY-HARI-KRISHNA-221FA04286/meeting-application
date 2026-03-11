@@ -358,7 +358,110 @@ export default function DashboardPage() {
                             ))}
                         </div>
                     </motion.div>
+
+                    {/* Meeting Frequency Analytics */}
+                    {s.meeting_frequency && (
+                        <motion.div className="card" {...fadeUp} transition={{ delay: 0.3 }}>
+                            <div className="card-header">
+                                <div>
+                                    <div className="card-title"><Calendar size={16} style={{ marginRight: 8 }} /> Meeting Frequency</div>
+                                    <div className="card-subtitle">This week's patterns</div>
+                                </div>
+                            </div>
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px', padding: '16px' }}>
+                                <div style={{ textAlign: 'center', padding: '12px', borderRadius: '8px', background: 'rgba(99,102,241,0.08)' }}>
+                                    <div style={{ fontSize: '1.4rem', fontWeight: 700, color: '#6366f1' }}>{s.meeting_frequency.this_week || 0}</div>
+                                    <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>This Week</div>
+                                </div>
+                                <div style={{ textAlign: 'center', padding: '12px', borderRadius: '8px', background: 'rgba(16,185,129,0.08)' }}>
+                                    <div style={{ fontSize: '1.4rem', fontWeight: 700, color: '#10b981' }}>{s.meeting_frequency.avg_per_day || 0}</div>
+                                    <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Avg/Day</div>
+                                </div>
+                                <div style={{ textAlign: 'center', padding: '12px', borderRadius: '8px', background: 'rgba(245,158,11,0.08)' }}>
+                                    <div style={{ fontSize: '1rem', fontWeight: 700, color: '#f59e0b' }}>{s.meeting_frequency.peak_day || 'N/A'}</div>
+                                    <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Peak Day</div>
+                                </div>
+                            </div>
+                        </motion.div>
+                    )}
                 </div>
+            </div>
+
+            {/* ── Analytics Row ── */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '20px', marginTop: '20px' }}>
+                {/* Calendar Heatmap */}
+                {s.calendar_heatmap && Object.keys(s.calendar_heatmap).length > 0 && (
+                    <motion.div className="card" {...fadeUp} transition={{ delay: 0.35 }}>
+                        <div className="card-header">
+                            <div>
+                                <div className="card-title"><TrendingUp size={16} style={{ marginRight: 8 }} /> Calendar Heatmap</div>
+                                <div className="card-subtitle">All-time meeting distribution</div>
+                            </div>
+                        </div>
+                        <div style={{ padding: '16px', display: 'flex', gap: '6px', alignItems: 'flex-end', height: '80px' }}>
+                            {Object.entries(s.calendar_heatmap).map(([day, count]) => {
+                                const maxV = Math.max(...Object.values(s.calendar_heatmap), 1);
+                                return (
+                                    <div key={day} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', flex: 1 }}>
+                                        <div style={{
+                                            width: '100%', borderRadius: '4px 4px 0 0',
+                                            backgroundColor: '#6366f1',
+                                            opacity: count === 0 ? 0.1 : 0.3 + (count / maxV) * 0.7,
+                                            height: `${Math.max(8, (count / maxV) * 50)}px`,
+                                        }} title={`${day}: ${count} meetings`} />
+                                        <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)', marginTop: '4px' }}>{day}</div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    </motion.div>
+                )}
+
+                {/* Keyword Trends */}
+                {(s.keyword_trends || []).length > 0 && (
+                    <motion.div className="card" {...fadeUp} transition={{ delay: 0.4 }}>
+                        <div className="card-header">
+                            <div>
+                                <div className="card-title"><MessageSquare size={16} style={{ marginRight: 8 }} /> Top Topics</div>
+                                <div className="card-subtitle">Most common keywords</div>
+                            </div>
+                        </div>
+                        <div style={{ padding: '16px', display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                            {s.keyword_trends.map((kw, i) => (
+                                <span key={i} className="badge" style={{
+                                    fontSize: `${Math.max(0.7, Math.min(1.1, 0.7 + kw.count * 0.05))}rem`,
+                                    padding: '4px 10px', background: 'rgba(99,102,241,0.1)', color: '#6366f1',
+                                    borderRadius: '12px', fontWeight: 500,
+                                }}>
+                                    {kw.word} ({kw.count})
+                                </span>
+                            ))}
+                        </div>
+                    </motion.div>
+                )}
+
+                {/* Productivity Card */}
+                <motion.div className="card" {...fadeUp} transition={{ delay: 0.45 }}>
+                    <div className="card-header">
+                        <div>
+                            <div className="card-title"><Target size={16} style={{ marginRight: 8 }} /> Productivity</div>
+                            <div className="card-subtitle">Meeting effectiveness</div>
+                        </div>
+                    </div>
+                    <div style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                        {[
+                            { label: 'Tasks Created', value: totalTasks, color: '#6366f1' },
+                            { label: 'Completion Rate', value: `${completionPct}%`, color: '#10b981' },
+                            { label: 'Longest Meeting', value: `${s.longest_meeting || 0}m`, color: '#ef4444' },
+                            { label: 'High Priority', value: s.high_priority_tasks || 0, color: '#f59e0b' },
+                        ].map(item => (
+                            <div key={item.label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 12px', borderRadius: '6px', background: 'rgba(99,102,241,0.04)' }}>
+                                <span style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>{item.label}</span>
+                                <span style={{ fontWeight: 700, color: item.color, fontSize: '1rem' }}>{item.value}</span>
+                            </div>
+                        ))}
+                    </div>
+                </motion.div>
             </div>
         </div>
     );

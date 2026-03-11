@@ -337,6 +337,41 @@ async def dashboard(
     avg_duration = sum(durations) / len(durations) if durations else 0.0
     longest_duration = max(durations) if durations else 0.0
 
+    # ── Meeting Frequency Analytics ──
+    from datetime import datetime, timedelta
+    from collections import Counter
+    now = datetime.utcnow()
+    week_ago = now - timedelta(days=7)
+    freq_res = await db.execute(select(Meeting.created_at).where(Meeting.user_id == uid, Meeting.created_at >= week_ago))
+    week_meetings = freq_res.scalars().all()
+    day_names = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+    day_counts = Counter(d.strftime("%A") for d in week_meetings)
+    peak_day = max(day_counts, key=day_counts.get) if day_counts else "N/A"
+    meeting_frequency = {
+        "this_week": len(week_meetings),
+        "avg_per_day": round(len(week_meetings) / 7.0, 1),
+        "peak_day": peak_day,
+    }
+
+    # ── Calendar Heatmap ──
+    all_dates_res = await db.execute(select(Meeting.created_at).where(Meeting.user_id == uid))
+    all_dates = all_dates_res.scalars().all()
+    calendar_heatmap = {}
+    for d in day_names:
+        calendar_heatmap[d[:3]] = 0
+    for d in all_dates:
+        calendar_heatmap[d.strftime("%a")] = calendar_heatmap.get(d.strftime("%a"), 0) + 1
+
+    # ── Keyword Trends (top words across all recent titles) ──
+    titles_res = await db.execute(select(Meeting.title).where(Meeting.user_id == uid).order_by(desc(Meeting.created_at)).limit(50))
+    titles = titles_res.scalars().all()
+    stop_words = {"the","a","an","meeting","and","or","with","for","on","in","to","of","is","are"}
+    all_kw = []
+    for t in titles:
+        all_kw.extend(w.lower().strip(".,!?;:\"'") for w in (t or "").split() if w.lower() not in stop_words and len(w) > 2)
+    kw_freq = Counter(all_kw)
+    keyword_trends = [{"word": w, "count": c} for w, c in kw_freq.most_common(10)]
+
     response_data = {
         "total_meetings": stats_row.total_meetings or 0,
         "total_tasks": stats_row.total_tasks or 0,
@@ -349,6 +384,9 @@ async def dashboard(
         "analyzed_meetings": stats_row.analyzed_meetings or 0,
         "avg_meeting_duration": round(avg_duration, 1),
         "longest_meeting": round(longest_duration, 1),
+        "meeting_frequency": meeting_frequency,
+        "keyword_trends": keyword_trends,
+        "calendar_heatmap": calendar_heatmap,
     }
 
     await set_cache(cache_key, response_data, ttl=60)
@@ -373,96 +411,192 @@ async def get_meeting(
     return await _enrich_meeting(db, meeting, include_analysis=True)
 
 
-# ── Meeting Stats ────────────────────────────────────────
+# ── Meeting Stats (Comprehensive Analytics Engine) ────────
 @router.get("/{meeting_id}/stats", response_model=MeetingStats)
 async def meeting_stats(
     meeting_id: int,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    import re
+    from collections import Counter
+
     result = await db.execute(
         select(Meeting).filter(Meeting.id == meeting_id, Meeting.user_id == current_user.id)
     )
     meeting = result.scalar_one_or_none()
-    
     if not meeting:
         raise HTTPException(status_code=404, detail="Meeting not found")
 
-    # Fetch subtitles
-    sub_res = await db.execute(select(Subtitle).filter(Subtitle.meeting_id == meeting_id))
+    sub_res = await db.execute(
+        select(Subtitle).filter(Subtitle.meeting_id == meeting_id).order_by(Subtitle.start_time)
+    )
     subtitles = sub_res.scalars().all()
-    
+
     speakers = list({s.speaker_name or s.speaker_id for s in subtitles})
     duration = max((s.end_time for s in subtitles), default=0) if subtitles else None
-    
-    # Counts
+
     t_count = await db.execute(select(func.count(Task.id)).filter(Task.meeting_id == meeting_id))
     p_count = await db.execute(select(func.count(Participant.id)).filter(Participant.meeting_id == meeting_id))
-    
     ai_check = await db.execute(select(AIResult).filter(AIResult.meeting_id == meeting_id))
 
-    # Calculate speaking time analytics, engagement, heatmap
+    # ── Accumulators ──
     speaking_time: dict[str, float] = {}
     speaker_insights: dict[str, dict] = {}
+    speaker_word_counts: dict[str, int] = {}
     heatmap_dict: dict[int, int] = {}
     prev_speaker = None
     prev_end_time = 0.0
     topic_changes = 0
+    total_active = 0.0
+    total_speaker_turns = 0
+    current_monologue_dur = 0.0
+    longest_mono_dur = 0.0
+    longest_mono_spk = ""
+    all_words: list[str] = []
+    questions: list[str] = []
+    silent_gaps: list[dict] = []
 
-    import re
-    decision_keywords = re.compile(r'\b(decided|approved|finalized|agreed|confirmed)\b', re.IGNORECASE)
-    rule_based_decisions = []
+    decision_re = re.compile(r'\b(decided|approved|finalized|agreed|confirmed|resolved)\b', re.IGNORECASE)
+    highlight_re = re.compile(r'(\$[\d,]+(?:\.\d+)?|\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4}|(?:january|february|march|april|may|june|july|august|september|october|november|december)\s+\d{1,2}|\bdeadline\b|\bbudget\b|\b\d{4,}\b)', re.IGNORECASE)
+    rule_based_decisions: list[str] = []
+    highlights: list[dict] = []
+
+    STOP_WORDS = {"the","a","an","is","are","was","were","be","been","being","have","has","had",
+                  "do","does","did","will","would","shall","should","may","might","must","can","could",
+                  "i","me","my","we","our","you","your","he","him","his","she","her","it","its",
+                  "they","them","their","this","that","these","those","and","but","or","nor","not",
+                  "so","if","then","else","when","at","by","for","with","about","against","between",
+                  "through","during","before","after","above","below","to","from","up","down","in",
+                  "out","on","off","over","under","again","further","once","of","all","each",
+                  "every","both","few","more","most","other","some","such","no","only","own","same",
+                  "than","too","very","just","don","t","s","re","ll","ve","d","m", "ok", "yeah",
+                  "yes","no","like","also","well","know","think","going","want","need","get","got",
+                  "let","thing","things","way","really","right","good","new","one","two","three",
+                  "what","how","who","where","why","which","there","here","uh","um","oh"}
 
     for sub in subtitles:
         spk = sub.speaker_name or sub.speaker_id or "Speaker"
-        # calculate approx time
         time_diff = max(0.0, sub.end_time - sub.start_time)
         if time_diff == 0:
-            time_diff = max(2.0, len(sub.text) / 15.0)  # estimate if missing
-        
+            time_diff = max(2.0, len(sub.text) / 15.0)
+
+        total_active += time_diff
+        words = sub.text.split()
+        word_count = len(words)
+        all_words.extend(w.lower().strip(".,!?;:\"'()[]{}") for w in words)
+
         if spk not in speaker_insights:
-            speaker_insights[spk] = {"speaking_time": 0.0, "messages": 0, "questions_asked": 0, "interruptions": 0}
-        
-        # update insights
+            speaker_insights[spk] = {"speaking_time": 0.0, "messages": 0, "questions_asked": 0, "interruptions": 0, "words_per_minute": 0, "participation_score": 0}
+            speaker_word_counts[spk] = 0
+
         speaker_insights[spk]["speaking_time"] += time_diff
         speaker_insights[spk]["messages"] += 1
+        speaker_word_counts[spk] = speaker_word_counts.get(spk, 0) + word_count
+
         if "?" in sub.text:
             speaker_insights[spk]["questions_asked"] += 1
-            
-        if prev_speaker and prev_speaker != spk and sub.start_time < prev_end_time + 1.0:
-            speaker_insights[spk]["interruptions"] += 1
-        
-        if prev_end_time > 0 and sub.start_time - prev_end_time > 15.0:
-            topic_changes += 1
+            if len(questions) < 30:
+                questions.append(sub.text.strip())
+
+        # Speaker turn tracking
+        if prev_speaker and prev_speaker != spk:
+            total_speaker_turns += 1
+            if prev_speaker != spk and sub.start_time < prev_end_time + 1.0:
+                speaker_insights[spk]["interruptions"] += 1
+            # Check monologue
+            if current_monologue_dur > longest_mono_dur:
+                longest_mono_dur = current_monologue_dur
+                longest_mono_spk = prev_speaker
+            current_monologue_dur = time_diff
+        else:
+            current_monologue_dur += time_diff
+
+        # Detect silent gaps (>8 seconds)
+        if prev_end_time > 0 and sub.start_time - prev_end_time > 8.0:
+            gap = sub.start_time - prev_end_time
+            if len(silent_gaps) < 20:
+                silent_gaps.append({"timestamp": prev_end_time, "duration": round(gap, 1)})
+            if gap > 15.0:
+                topic_changes += 1
 
         prev_speaker = spk
         prev_end_time = max(prev_end_time, sub.end_time)
-
         speaking_time[spk] = speaking_time.get(spk, 0) + time_diff
-        
-        # update heatmap (minute buckets)
+
         minute_idx = int(sub.start_time // 60)
         heatmap_dict[minute_idx] = heatmap_dict.get(minute_idx, 0) + 1
-        
-        # extract decisions
-        if decision_keywords.search(sub.text) and len(rule_based_decisions) < 20:
+
+        if decision_re.search(sub.text) and len(rule_based_decisions) < 20:
             rule_based_decisions.append(sub.text.strip())
 
-    # convert absolute seconds into percentages summing up to 100%
+        # Smart highlighting
+        for m in highlight_re.finditer(sub.text):
+            matched = m.group(0)
+            h_type = "number"
+            if matched.startswith("$") or "budget" in matched.lower():
+                h_type = "budget"
+            elif "deadline" in matched.lower():
+                h_type = "deadline"
+            elif any(mo in matched.lower() for mo in ["january","february","march","april","may","june","july","august","september","october","november","december"]) or "/" in matched or "-" in matched:
+                h_type = "date"
+            if len(highlights) < 30:
+                highlights.append({"text": matched, "type": h_type, "timestamp": sub.start_time})
+
+    # Check final monologue
+    if current_monologue_dur > longest_mono_dur:
+        longest_mono_dur = current_monologue_dur
+        longest_mono_spk = prev_speaker or ""
+
+    # ── Conversation Speed ──
+    conversation_speed: dict[str, float] = {}
+    for spk, si in speaker_insights.items():
+        dur_min = si["speaking_time"] / 60.0 if si["speaking_time"] > 0 else 1
+        wpm = round(speaker_word_counts.get(spk, 0) / dur_min, 0)
+        si["words_per_minute"] = wpm
+        conversation_speed[spk] = wpm
+
+    # ── Participation scores ──
+    max_msgs = max((si["messages"] for si in speaker_insights.values()), default=1)
+    max_qs = max((si["questions_asked"] for si in speaker_insights.values()), default=1) or 1
+    for spk, si in speaker_insights.items():
+        score = min(100, int(
+            (si["messages"] / max(1, max_msgs)) * 40 +
+            (si["speaking_time"] / max(1, total_active)) * 30 +
+            (si["questions_asked"] / max_qs) * 20 +
+            (total_speaker_turns > 0 and 10 or 0)
+        ))
+        si["participation_score"] = score
+
+    # ── Speaking time percentages ──
     total_spk_time = sum(speaking_time.values())
     if total_spk_time > 0:
         for k in speaking_time:
             speaking_time[k] = round((speaking_time[k] / total_spk_time) * 100, 1)
 
+    # ── Heatmap ──
     heatmap = []
     if heatmap_dict:
-        max_min = max(heatmap_dict.keys())
-        for i in range(max_min + 1):
+        for i in range(max(heatmap_dict.keys()) + 1):
             heatmap.append(heatmap_dict.get(i, 0))
 
+    # ── Efficiency ──
+    silent_seconds = max(0, (duration or 0) - total_active)
+    efficiency_score = int((total_active / max(1, duration or 1)) * 100) if subtitles else 0
+    efficiency_score = min(100, efficiency_score)
+
+    # ── Engagement ──
     duration_mins = (duration or 1.0) / 60.0
     subtitle_density = len(subtitles) / max(1.0, duration_mins)
     engagement_score = min(100, int((len(speakers) * 10) + (subtitle_density * 2) + (topic_changes * 5))) if subtitles else 0
+
+    # ── Keyword Cloud & TF-IDF Title ──
+    filtered = [w for w in all_words if w not in STOP_WORDS and len(w) > 2]
+    word_freq = Counter(filtered)
+    keyword_cloud = [{"word": w, "count": c} for w, c in word_freq.most_common(40)]
+
+    top_words = [w for w, _ in word_freq.most_common(5)]
+    suggested_title = " ".join(w.title() for w in top_words) + " Discussion" if top_words else meeting.title
 
     return {
         "meeting_id": meeting_id,
@@ -477,6 +611,18 @@ async def meeting_stats(
         "engagement_score": engagement_score,
         "heatmap": heatmap,
         "rule_based_decisions": rule_based_decisions,
+        "active_speaking_seconds": round(total_active, 1),
+        "silent_seconds": round(silent_seconds, 1),
+        "efficiency_score": efficiency_score,
+        "suggested_title": suggested_title,
+        "keyword_cloud": keyword_cloud,
+        "total_speaker_turns": total_speaker_turns,
+        "longest_monologue_speaker": longest_mono_spk,
+        "longest_monologue_seconds": round(longest_mono_dur, 1),
+        "silent_gaps": silent_gaps,
+        "questions": questions,
+        "highlights": highlights,
+        "conversation_speed": conversation_speed,
     }
 
 
