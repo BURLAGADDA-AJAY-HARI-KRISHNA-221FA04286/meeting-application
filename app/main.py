@@ -56,6 +56,13 @@ def _ensure_schema_compatibility() -> None:
             if "ix_tasks_due_date" not in task_indexes:
                 conn.execute(text("CREATE INDEX IF NOT EXISTS ix_tasks_due_date ON tasks (due_date)"))
                 logger.info("Applied schema upgrade: added ix_tasks_due_date index")
+
+            # Linear integration: add linear_access_token to users table
+            if "users" in tables:
+                user_columns = {col["name"] for col in inspector.get_columns("users")}
+                if "linear_access_token" not in user_columns:
+                    conn.execute(text("ALTER TABLE users ADD COLUMN linear_access_token VARCHAR(255)"))
+                    logger.info("Applied schema upgrade: added users.linear_access_token column")
     except Exception as exc:
         logger.warning("Runtime schema compatibility check skipped: %s", exc)
 
@@ -235,6 +242,11 @@ def create_app() -> FastAPI:
 
     # Routes
     app.include_router(api_router, prefix="/api/v1")
+
+    # Linear OAuth routes mounted at root level so the callback URL
+    # exactly matches the redirect URI registered in Linear: /linear/callback
+    from app.api.v1.linear import router as linear_router
+    app.include_router(linear_router)
 
     # Metrics Endpoint
     try:

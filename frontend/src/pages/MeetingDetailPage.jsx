@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { meetingsAPI, aiAPI, tasksAPI, githubAPI, jiraAPI } from '../api';
+import { meetingsAPI, aiAPI, tasksAPI, githubAPI, jiraAPI, linearAPI } from '../api';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
     ArrowLeft, Brain, RefreshCw, Download, SquareCheck,
@@ -143,6 +143,28 @@ export default function MeetingDetailPage() {
             toast.success(`Exported ${res.data.exported}/${res.data.total} issues to Jira`, { id: toastId });
         } catch (err) {
             toast.error(err.response?.data?.detail || 'Jira export failed', { id: toastId });
+        }
+    };
+
+    const handleExportLinear = async () => {
+        const toastId = toast.loading('Exporting to Linear...');
+        try {
+            await tasksAPI.generate(id); // ensure tasks exist
+            const res = await linearAPI.exportTasks(id);
+            toast.success(`Exported ${res.data.exported}/${res.data.total} issues to Linear`, { id: toastId });
+        } catch (err) {
+            const detail = err.response?.data?.detail || 'Linear export failed';
+            if (detail.includes('not connected')) {
+                toast.error('Linear not connected. Redirecting to connect...', { id: toastId });
+                try {
+                    const urlRes = await linearAPI.getAuthUrl();
+                    window.location.href = urlRes.data.auth_url;
+                } catch {
+                    toast.error('Could not get Linear auth URL. Check server config.');
+                }
+            } else {
+                toast.error(detail, { id: toastId });
+            }
         }
     };
 
@@ -340,6 +362,9 @@ export default function MeetingDetailPage() {
                             </button>
                             <button className="btn btn-secondary" onClick={handleExportJira} title="Export tasks to Jira issues">
                                 <Target size={14} /> Jira Export
+                            </button>
+                            <button className="btn btn-secondary" onClick={handleExportLinear} title="Export tasks to Linear issues" style={{ background: 'linear-gradient(135deg, #5E6AD2, #8B5CF6)', color: '#fff', border: 'none' }}>
+                                <Sparkles size={14} /> Linear Export
                             </button>
                             <button className="btn btn-secondary" onClick={handleAddToCalendar} title="Add to Google Calendar">
                                 <Calendar size={14} /> Calendar

@@ -238,6 +238,27 @@ export const jiraAPI = {
         api.post(`/meetings/${meetingId}/export-jira`, payload),
 };
 
+// ── Linear Export ──
+// Note: Linear OAuth routes are at root level (not /api/v1)
+const LINEAR_BASE = `${window.location.protocol}//${window.location.hostname}:8000`;
+
+export const linearAPI = {
+    exportTasks: (meetingId, teamId, taskIds) => {
+        const payload = {};
+        if (teamId) payload.team_id = teamId;
+        if (taskIds) payload.task_ids = taskIds;
+        return api.post(`/meetings/${meetingId}/export-linear`, payload);
+    },
+    getStatus: () =>
+        axios.get(`${LINEAR_BASE}/linear/status`, {
+            headers: { Authorization: `Bearer ${getAccessToken()}` }
+        }),
+    getAuthUrl: () =>
+        axios.get(`${LINEAR_BASE}/linear/auth-url`, {
+            headers: { Authorization: `Bearer ${getAccessToken()}` }
+        }),
+};
+
 // ── WebSocket helper ──
 export function createMeetingWebSocket(meetingId) {
     const token = getAccessToken();

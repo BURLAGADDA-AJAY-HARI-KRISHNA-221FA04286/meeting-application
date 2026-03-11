@@ -5,14 +5,15 @@
 
 ## 1. PROJECT OVERVIEW
 
-The **AI Meeting Intelligence System** is a production-grade, full-stack web application that transforms raw meeting transcripts into actionable intelligence using Google Gemini AI. Users can upload or live-record meeting transcripts, and the system automatically generates summaries, extracts action items, detects risks, analyzes sentiment, and enables natural-language Q&A over meeting content via RAG (Retrieval-Augmented Generation).
+The **AI Meeting Intelligence System** is a production-grade, full-stack web application that transforms raw meeting transcripts into actionable intelligence using Google Gemini AI. Users can upload or live-record meetings, and the system automatically generates summaries, extracts action items, detects risks, analyzes sentiment, and enables natural-language Q&A over meeting content via RAG (Retrieval-Augmented Generation).
 
 ### Core Value Proposition
+- **Premium Landing Page Experience** — A stunning, animated particle canvas with 3D glassmorphic elements showcasing the product.
 - **One-click AI Analysis** — Upload a transcript and get summary, decisions, actions, risks, and sentiment in seconds.
-- **Live Meeting Support** — Real-time audio capture with Whisper STT and speaker diarization via WebSocket.
+- **Live Video Meetings** — Real-time WebRTC audio/video capture with Whisper STT, speaker diarization, whiteboards, and polls.
 - **RAG-Powered Q&A** — Ask natural language questions about any meeting and get cited, evidence-based answers.
-- **Task Management** — Auto-generate tasks from AI-extracted action items with Kanban board management.
-- **GitHub Integration** — Export meeting tasks directly as GitHub Issues.
+- **Task Management & Analytics** — Auto-generate tasks, manage them via Kanban board, and analyze estimated vs actual time spent with visual graphs.
+- **Project Management Integration** — Export meeting tasks directly to **GitHub**, **Jira**, and **Linear** issues with one click.
 
 ---
 
@@ -37,7 +38,7 @@ The **AI Meeting Intelligence System** is a production-grade, full-stack web app
 | **Pyannote.audio** | latest | Speaker diarization |
 | **PyDub** | latest | Audio format conversion |
 | **Torch / Torchaudio** | latest | ML model runtime |
-| **Requests** | latest | GitHub API integration |
+| **Requests / HTTPX** | latest | GitHub, Jira, and Linear API integrations |
 
 ### Frontend
 | Technology | Version | Purpose |
@@ -291,6 +292,16 @@ meeting app/
 | DELETE | `/tasks/{id}` | Delete a task | ✓ |
 | POST | `/tasks/batch-update` | Batch update status for multiple tasks | ✓ |
 | POST | `/meetings/{id}/export-github` | Export tasks as GitHub Issues | ✓ |
+| POST | `/meetings/{id}/export-jira` | Export tasks as Jira Issues | ✓ |
+| POST | `/meetings/{id}/export-linear` | Export tasks as Linear Issues | ✓ |
+
+### External Integrations (OAuth)
+| Method | Endpoint | Description | Auth |
+|---|---|---|---|
+| GET | `/linear/connect` | Initiates Linear OAuth 2.0 flow (returns redirect URL) | ✓ |
+| GET | `/linear/callback` | OAuth callback to exchange code for full access token | ✗ |
+| GET | `/linear/status` | Check if user is currently connected to Linear | ✓ |
+| GET | `/linear/teams` | Fetch connected user's Linear teams / workspaces | ✓ |
 
 ### WebSocket
 | Protocol | Endpoint | Description |
@@ -381,7 +392,7 @@ User → Opens LiveMeetingPage → connects WS to /ws/meeting/{id}?token=JWT
   → On disconnect: records leave_time, broadcasts LEAVE event
 ```
 
-### Flow 6: Task Auto-Generation & GitHub Export
+### Flow 6: Task Auto-Generation & External Export (GitHub/Jira/Linear)
 ```
 User → POST /meetings/{id}/generate-tasks
   → Reads AIResult.actions_json.action_items
@@ -389,11 +400,12 @@ User → POST /meetings/{id}/generate-tasks
   → Creates Task records (title, owner, priority, status=todo)
   → Returns created tasks
 
-User → POST /meetings/{id}/export-github { repo: "owner/repo" }
-  → For each task: creates GitHub Issue via REST API
+User → POST /meetings/{id}/export-linear { team_id: "..." }
+  → Validates user has completed Linear OAuth via /linear/connect
+  → Fetches user's stored linear_access_token from DB
+  → For each task: sends GraphQL mutation to Linear API to create Issue
   → Issue body includes: meeting title, priority, owner, source reference
-  → Labels: "meeting-task" + "priority: {level}"
-  → Returns: exported count, issue URLs
+  → Returns: exported count, total count, and Linear Issue URLs
 ```
 
 ---
@@ -421,23 +433,23 @@ User → POST /meetings/{id}/export-github { repo: "owner/repo" }
 - **Sentiment Tab** — Overall tone + per-speaker sentiment with emotion tags
 - **RAG Chat Tab** — Interactive Q&A with evidence citations
 - **Report Download** — Export full analysis as text report
-- **GitHub Export** — Push tasks to any GitHub repository
+- **External Export** — Push tasks to **GitHub**, **Jira**, and **Linear** with one click.
 
 ### 8.4 Live Meeting
-- WebSocket-based real-time connection
-- Microphone audio capture (MediaRecorder API)
-- Audio level visualization
+- WebRTC-based real-time audio and video conferencing (up to 50 participants)
+- WebSocket-based real-time audio capture (MediaRecorder API)
 - Real-time live subtitles from Whisper STT
-- Participant count tracking
-- Invite link sharing
+- Collaborative UI: Real-time Whiteboard, Live Polls, Q&A, and Emoji Reactions
+- Audio level visualization
+- Participant count tracking and invite link generation
 - Transcript download during/after meeting
 
-### 8.5 Task Board (Kanban)
-- Three-column board: Todo → In Progress → Done
-- Drag/move tasks between columns
-- Priority badges (high/medium/low)
-- Owner attribution
-- Filter by priority
+### 8.5 Task Management & Analytics
+- Complete manual task CRUD (Create, Read, Update, Delete) directly connected to meetings.
+- **Kanban Board View**: Three-column board (Todo → In Progress → Done) with drag-and-drop workflow.
+- **Time Graph View**: Visual analytics comparing Estimated vs. Actual time spent per task to track engineering velocity.
+- Priority badges (high/medium/low) with filtering capabilities.
+- Owner attribution and progress tracking.
 
 ### 8.6 Settings
 - Profile editing (name, email)
@@ -501,6 +513,10 @@ User → POST /meetings/{id}/export-github { repo: "owner/repo" }
 | `RATE_LIMIT_PER_MINUTE` | 60 | API rate limit |
 | `HF_API_KEY` | (none) | Hugging Face token for Pyannote |
 | `GITHUB_TOKEN` | (none) | GitHub PAT for issue export |
+| `LINEAR_CLIENT_ID` | (none) | Linear OAuth client ID |
+| `LINEAR_CLIENT_SECRET` | (none) | Linear OAuth secret key |
+| `LINEAR_REDIRECT_URI` | /linear/callback | Linear OAuth callback URL |
+| `LINEAR_TEAM_ID` | (none) | Target Linear team UUID for exports |
 | `RAG_CHUNK_SIZE` | 3 | Subtitles per RAG chunk |
 | `RAG_TOP_K` | 5 | Top-K retrieval results |
 | `RAG_MODEL_NAME` | all-MiniLM-L6-v2 | Embedding model |
@@ -567,7 +583,41 @@ docker-compose up --build
 
 6. **Atomic AI Pipeline** — All 5 analysis steps run sequentially and save atomically. If the pipeline fails mid-way, partial results are not persisted.
 
-7. **User Data Isolation** — Every query filters by `user_id` to ensure users can only access their own meetings, tasks, and analysis results.
+7. **Fully Asynchronous Architecture** — Entire backend refactored to use `async`/`await` for Database I/O, API responses, and external LLM requests, massively increasing performance and scalability under load.
+
+8. **User Data Isolation** — Every query filters by `user_id` to ensure users can only access their own meetings, tasks, and analysis results.
+
+14. SECURITY IMPLEMENTATIONS
+
+To ensure user data protection, robust access control, and API integrity, the following security measures have been implemented across the stack:
+
+1. **JWT-Based Dual Token Authentication** 
+   - Uses `python-jose` to generate cryptographically signed JSON Web Tokens.
+   - Separate short-lived **access tokens** (6 hours) and long-lived **refresh tokens** (7 days).
+   - Frontend Axios interceptors automatically detect 401 Unauthorized responses and seamlessly refresh the access token in the background, minimizing exposure to token theft while maintaining UX.
+
+2. **Cryptographic Password Hashing**
+   - User passwords are securely hashed using the `passlib` library with the **PBKDF2-SHA256** algorithm before being stored in the database.
+   - Plaintext passwords are never stored or logged in the system.
+
+3. **Strict User Data Isolation (Multitenancy)**
+   - All backend ORM queries for Meetings, Tasks, and Analysis are explicitly joined or filtered by the `user_id` of the currently authenticated `User`.
+   - It is mathematically impossible for one user to access or manipulate another user's meeting records via the REST API.
+
+4. **API Rate Limiting (SlowAPI)**
+   - Endpoints are protected against DDoS, spam, and brute-force attacks via `SlowAPI`.
+   - Enforces a strict limit (e.g., 60 requests/minute per IP) on all sensitive endpoints.
+
+5. **Cross-Origin Resource Sharing (CORS)**
+   - FastAPI CORS middleware is restricted to explicitly trusted frontend domains (e.g., `localhost:3000`, `localhost:5173`).
+   - Prevents malicious sites from performing unauthorized cross-site requests (CSRF logic).
+
+6. **Secure WebSockets & Real-Time Auth**
+   - WebSocket connections used for WebRTC signaling and live transcriptions require a valid JWT token to be passed via query parameters during the connection handshake.
+   - If the token is missing or invalid, the socket server firmly rejects the upgrade request, securing the live room.
+
+7. **Client-Side Route Guards**
+   - React Router DOM implementations of `<PrivateRoute />` and `<PublicRoute />` prevent unauthenticated users from bypassing login flows and accessing the application UI state.
 
 ---
 

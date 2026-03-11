@@ -48,6 +48,11 @@ class Settings(BaseSettings):
     jira_project_key: str | None = None
     jira_email: str | None = None
     jira_api_token: str | None = None
+    linear_client_id: str | None = None
+    linear_client_secret: str | None = None
+    linear_redirect_uri: str | None = None
+    linear_api_url: str | None = None
+    linear_team_id: str | None = None
 
     # ── RAG Settings ───────────────────────────────────
     rag_chunk_size: int = 3        # Combine N subtitles into one chunk
