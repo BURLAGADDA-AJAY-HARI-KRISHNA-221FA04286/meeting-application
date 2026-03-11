@@ -29,9 +29,12 @@ export default function MeetingDetailPage() {
     const [showTranscript, setShowTranscript] = useState(false);
     const [chatMessages, setChatMessages] = useState([]);
     const [chatInput, setChatInput] = useState('');
+    const [transcriptSearch, setTranscriptSearch] = useState('');
     const [chatLoading, setChatLoading] = useState(false);
     const [copied, setCopied] = useState(false);
     const chatEndRef = useRef(null);
+
+    const [meetingStats, setMeetingStats] = useState(null);
 
     useEffect(() => {
         loadMeeting();
@@ -41,6 +44,9 @@ export default function MeetingDetailPage() {
         try {
             const res = await meetingsAPI.get(id);
             setMeeting(res.data);
+            
+            // Fetch stats in parallel
+            meetingsAPI.getStats(id).then(r => setMeetingStats(r)).catch(() => {});
 
             // If analysis exists, load it
             if (res.data.has_analysis) {
@@ -439,17 +445,31 @@ export default function MeetingDetailPage() {
                             {meeting.transcript.length.toLocaleString()} chars
                         </span>}
                     </span>
-                    <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                    <div style={{ display: 'flex', gap: 8, alignItems: 'center' }} onClick={(e) => e.stopPropagation()}>
+                        {showTranscript && (
+                            <input 
+                                type="text" 
+                                placeholder="Search transcript..." 
+                                className="input" 
+                                style={{ padding: '4px 8px', fontSize: '0.85rem', height: '28px' }}
+                                value={transcriptSearch}
+                                onChange={(e) => setTranscriptSearch(e.target.value.toLowerCase())}
+                                id="transcriptSearchParams"
+                            />
+                        )}
                         {meeting.transcript && (
                             <button
                                 className="btn btn-ghost btn-sm"
                                 onClick={(e) => { e.stopPropagation(); copyTranscript(); }}
                                 style={{ padding: '4px 8px' }}
+                                title="Copy full transcript"
                             >
                                 {copied ? <Check size={14} /> : <Copy size={14} />}
                             </button>
                         )}
-                        {showTranscript ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
+                        <button className="btn btn-ghost btn-sm" onClick={() => setShowTranscript(!showTranscript)}>
+                            {showTranscript ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
+                        </button>
                     </div>
                 </div>
                 <AnimatePresence>
@@ -461,7 +481,38 @@ export default function MeetingDetailPage() {
                             exit={{ height: 0, opacity: 0 }}
                             transition={{ duration: 0.2 }}
                         >
-                            <pre>{meeting.transcript || 'No transcript available. Upload a transcript or have a video call with captions enabled.'}</pre>
+                            <div className="transcript-wrapper" style={{ maxHeight: '500px', overflowY: 'auto', padding: '16px', backgroundColor: '#f9fafb', borderRadius: '8px', fontFamily: 'monospace', whiteSpace: 'pre-wrap', lineHeight: 1.6 }}>
+                                {(meeting.transcript || 'No transcript available. Upload a transcript or have a video call with captions enabled.').split('\n').map((line, idx) => {
+                                    // Search filtering logic
+                                    if (transcriptSearch && !line.toLowerCase().includes(transcriptSearch)) {
+                                        return null;
+                                    }
+
+                                    // Rule-based task highlighting
+                                    const taskRegex = /(we should|let's do|need to|assign this|deadline)/i;
+                                    const riskRegex = /(problem|delay|risk|issue|blocked|dependency)/i;
+                                    
+                                    let isTask = taskRegex.test(line);
+                                    let isRisk = riskRegex.test(line);
+                                    
+                                    let bg = 'transparent';
+                                    let borderL = 'none';
+                                    
+                                    if(isRisk) {
+                                        bg = '#fee2e2'; // Light red
+                                        borderL = '4px solid #ef4444';
+                                    } else if (isTask) {
+                                        bg = '#dbeafe'; // Light blue
+                                        borderL = '4px solid #3b82f6';
+                                    }
+
+                                    return (
+                                        <div key={idx} style={{ padding: '4px 8px', backgroundColor: bg, borderLeft: borderL, marginBottom: 4, borderRadius: 2 }}>
+                                            {line}
+                                        </div>
+                                    );
+                                })}
+                            </div>
                         </motion.div>
                     )}
                 </AnimatePresence>
@@ -521,6 +572,22 @@ export default function MeetingDetailPage() {
                                             <p className="ac-summary-text" style={{ whiteSpace: 'pre-wrap' }}>
                                                 {getSummaryText() || 'No summary available yet. Click "Re-analyze" to generate one with the latest AI model.'}
                                             </p>
+                                            {meetingStats?.data?.speaking_time && Object.keys(meetingStats.data.speaking_time).length > 0 && (
+                                                <div style={{ marginTop: '20px', paddingTop: '16px', borderTop: '1px solid var(--border-color)' }}>
+                                                    <div className="ac-title" style={{ marginBottom: '12px', fontSize:'0.9rem' }}><BarChart3 size={14} style={{ color: 'var(--accent-primary)' }} /> Speaking Time Analytics</div>
+                                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                                        {Object.entries(meetingStats.data.speaking_time).sort((a,b) => b[1] - a[1]).map(([speaker, percentage]) => (
+                                                            <div key={speaker} style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                                                                <div style={{ width: '120px', fontSize: '0.85rem', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{speaker}</div>
+                                                                <div style={{ flex: 1, backgroundColor: 'var(--bg-secondary)', height: '8px', borderRadius: '4px', overflow:'hidden' }}>
+                                                                    <div style={{ width: `${percentage}%`, backgroundColor: 'var(--accent-primary)', height: '100%', borderRadius: '4px' }} />
+                                                                </div>
+                                                                <div style={{ width: '40px', fontSize: '0.8rem', color: 'var(--text-muted)', textAlign: 'right' }}>{percentage}%</div>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            )}
                                         </div>
                                         <div className="card analysis-card">
                                             <div className="ac-title"><Lightbulb size={16} style={{ color: '#f59e0b' }} /> Key Points</div>

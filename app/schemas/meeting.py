@@ -78,3 +78,4 @@ class MeetingStats(BaseModel):
     has_analysis: bool
     duration_seconds: float | None = None
     speakers: list[str] = []
+    speaking_time: dict[str, float] = {}

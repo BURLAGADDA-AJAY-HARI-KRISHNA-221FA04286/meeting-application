@@ -133,6 +133,13 @@ async def get_ai_results(
     current_user: User = Depends(get_current_user),
 ):
     """Retrieve cached AI analysis results."""
+    from app.core.redis import get_cache, set_cache
+
+    cache_key = f"ai_results:{meeting_id}:{current_user.id}"
+    cached = await get_cache(cache_key)
+    if cached:
+        return cached
+
     result = await db.execute(
         select(Meeting).filter(Meeting.id == meeting_id, Meeting.user_id == current_user.id)
     )
@@ -147,7 +154,7 @@ async def get_ai_results(
     if not ai_result:
         return {"status": "pending", "message": "No AI results found yet."}
 
-    return {
+    data = {
         "status": "complete",
         "summary": ai_result.summary_json,
         "decisions": ai_result.decisions_json,
@@ -155,6 +162,10 @@ async def get_ai_results(
         "risks": ai_result.risks_json,
         "sentiment": ai_result.sentiment_json,
     }
+
+    # Cache the result for 1 hour
+    await set_cache(cache_key, data, ttl=3600)
+    return data
 
 
 # ── RAG Q&A ──────────────────────────────────────────────

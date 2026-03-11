@@ -176,10 +176,10 @@ async function _fetchAndSave(url, fallbackName) {
     }
 }
 
-// ── Meetings ──
 export const meetingsAPI = {
     list: (params = {}) => cachedGet('/meetings', Object.keys(params).length ? params : null),
     get: (id) => api.get(`/meetings/${id}`),
+    getStats: (id) => cachedGet(`/meetings/${id}/stats`),
     create: (data) => api.post('/meetings', data).then(r => { invalidateCache('/meetings'); return r; }),
     update: (id, data) => api.patch(`/meetings/${id}`, data).then(r => { invalidateCache('/meetings'); return r; }),
     delete: (id) => api.delete(`/meetings/${id}`).then(r => { invalidateCache('/meetings'); return r; }),

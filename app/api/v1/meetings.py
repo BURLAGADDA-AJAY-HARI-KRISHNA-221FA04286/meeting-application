@@ -393,6 +393,23 @@ async def meeting_stats(
     
     ai_check = await db.execute(select(AIResult).filter(AIResult.meeting_id == meeting_id))
 
+    # Calculate speaking time analytics (Rule-based, no LLM)
+    speaking_time: dict[str, float] = {}
+    for sub in subtitles:
+        spk = sub.speaker_name or sub.speaker_id or "Speaker"
+        # calculate approx time
+        time_diff = max(0.0, sub.end_time - sub.start_time)
+        if time_diff == 0:
+            time_diff = max(2.0, len(sub.text) / 15.0)  # estimate if missing
+        
+        speaking_time[spk] = speaking_time.get(spk, 0) + time_diff
+        
+    # convert absolute seconds into percentages summing up to 100%
+    total_spk_time = sum(speaking_time.values())
+    if total_spk_time > 0:
+        for k in speaking_time:
+            speaking_time[k] = round((speaking_time[k] / total_spk_time) * 100, 1)
+
     return {
         "meeting_id": meeting_id,
         "subtitle_count": len(subtitles),
@@ -401,6 +418,7 @@ async def meeting_stats(
         "has_analysis": ai_check.scalars().first() is not None,
         "duration_seconds": duration,
         "speakers": speakers,
+        "speaking_time": speaking_time,
     }
 
 
