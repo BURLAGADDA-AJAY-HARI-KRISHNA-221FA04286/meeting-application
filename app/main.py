@@ -149,6 +149,14 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.error(f"Failed to init Redis: {e}")
 
+    try:
+        import asyncio
+        from app.ai.speech_service import get_speech_processor
+        asyncio.create_task(asyncio.to_thread(get_speech_processor))
+        logger.info("Background model warmup task launched")
+    except Exception as e:
+        logger.warning(f"Failed to launch model warmup: {e}")
+
     yield  # Application runs here
 
     # Shutdown

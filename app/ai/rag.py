@@ -117,5 +117,47 @@ INSTRUCTIONS:
             "chunks_searched": len(transcript.split("\n")),
         }
 
+    async def stream_query(self, meeting_id: int, question: str, db: AsyncSession | None = None):
+        """Streaming generator for RAG responses."""
+        if not settings.gemini_api_key:
+            yield "AI is not configured. Please set the Gemini API key."
+            return
+
+        if db is None:
+            yield "Database session not available."
+            return
+
+        try:
+            transcript = await self._get_transcript(meeting_id, db)
+        except ValueError as e:
+            yield str(e)
+            return
+
+        prompt = f"""You are an AI assistant answering questions about a meeting based on its transcript.
+
+MEETING TRANSCRIPT:
+{transcript}
+
+USER QUESTION: {question}
+
+INSTRUCTIONS:
+1. Answer ONLY based on the transcript above.
+2. Cite specific speakers in your answer (e.g., "According to John...").
+3. Be concise but thorough.
+4. Format your answer in clear, readable paragraphs."""
+
+        try:
+            client = genai.Client(api_key=settings.gemini_api_key)
+            response = await client.aio.models.generate_content_stream(
+                model=settings.gemini_model,
+                contents=prompt,
+            )
+            async for chunk in response:
+                if chunk.text:
+                    yield chunk.text
+        except Exception as e:
+            logger.error("Gemini RAG stream query failed: %s", e)
+            yield f"I could not process your question right now. Error: {str(e)[:100]}"
+
 
 rag_store = RAGStore()

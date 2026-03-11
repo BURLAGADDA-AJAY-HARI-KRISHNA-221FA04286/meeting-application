@@ -2,9 +2,12 @@
 AI API — Analysis Pipeline, Results, and RAG Q&A
 """
 import logging
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Request
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+from app.core.rate_limit import limiter
 from sqlalchemy.ext.asyncio import AsyncSession
 
 import uuid
@@ -45,7 +48,9 @@ class RAGResponse(BaseModel):
 
 # ── Analyze Meeting ──────────────────────────────────────
 @router.post("/{meeting_id}/analyze", response_model=AnalyzeResponse)
+@limiter.limit("50/hour")
 async def analyze_meeting(
+    request: Request,
     meeting_id: int,
     force: bool = False,
     db: AsyncSession = Depends(get_db),
@@ -154,7 +159,9 @@ async def get_ai_results(
 
 # ── RAG Q&A ──────────────────────────────────────────────
 @router.post("/{meeting_id}/rag-query", response_model=RAGResponse)
+@limiter.limit("50/hour")
 async def rag_query(
+    request: Request,
     meeting_id: int,
     payload: RAGQueryRequest,
     db: AsyncSession = Depends(get_db),
@@ -183,3 +190,31 @@ async def rag_query(
     except Exception as e:
         logger.error("RAG query failed for meeting %d: %s", meeting_id, e, exc_info=True)
         raise HTTPException(status_code=500, detail=f"RAG query failed: {e}")
+
+@router.post("/{meeting_id}/rag-query-stream")
+@limiter.limit("50/hour")
+async def rag_query_stream(
+    request: Request,
+    meeting_id: int,
+    payload: RAGQueryRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Streaming RAG-powered Q&A: ask questions about a meeting, get answers instantly."""
+    result = await db.execute(
+        select(Meeting).filter(Meeting.id == meeting_id, Meeting.user_id == current_user.id)
+    )
+    meeting = result.scalar_one_or_none()
+    
+    if not meeting:
+        raise HTTPException(status_code=404, detail="Meeting not found")
+
+    try:
+        # Calls the async streaming RAG generator
+        generator = rag_store.stream_query(meeting_id, payload.question, db=db)
+        return StreamingResponse(generator, media_type="text/plain")
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error("RAG stream query failed for meeting %d: %s", meeting_id, e, exc_info=True)
+        raise HTTPException(status_code=500, detail=f"RAG stream query failed: {e}")

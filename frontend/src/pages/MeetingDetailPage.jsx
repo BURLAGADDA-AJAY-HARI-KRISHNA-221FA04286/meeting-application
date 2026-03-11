@@ -245,16 +245,37 @@ export default function MeetingDetailPage() {
         setChatInput('');
         setChatMessages(prev => [...prev, { role: 'user', content: question }]);
         setChatLoading(true);
+
         try {
-            const res = await aiAPI.ragQuery(id, question);
-            const answer = res.data.answer || res.data.response || 'No response';
-            const evidence = res.data.evidence || [];
-            setChatMessages(prev => [...prev, {
-                role: 'ai',
-                content: answer,
-                evidence: evidence,
-                chunks: res.data.chunks_searched || 0,
-            }]);
+            const { API_BASE, getAccessToken } = await import('../api.js');
+            const res = await fetch(`${API_BASE}/ai/${id}/rag-query-stream`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    Authorization: `Bearer ${getAccessToken()}`,
+                },
+                body: JSON.stringify({ question })
+            });
+
+            if (!res.ok) throw new Error('Failed to stream');
+
+            setChatMessages(prev => [...prev, { role: 'ai', content: '', chunks: 0 }]);
+            
+            const reader = res.body.getReader();
+            const decoder = new TextDecoder('utf-8');
+            let text = '';
+            
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                text += decoder.decode(value, { stream: true });
+                setChatMessages(prev => {
+                    const next = [...prev];
+                    next[next.length - 1] = { ...next[next.length - 1], content: text };
+                    return next;
+                });
+                chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+            }
         } catch {
             setChatMessages(prev => [...prev, {
                 role: 'ai',

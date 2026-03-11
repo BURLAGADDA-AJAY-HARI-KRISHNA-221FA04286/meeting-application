@@ -649,12 +649,24 @@ async def upload_media(
     # Auto-analyze if requested
     if auto_analyze:
         try:
-            from app.ai.orchestrator import AIAgentOrchestrator
-            orchestrator = AIAgentOrchestrator(db, meeting.id)
-            await orchestrator.run_pipeline()
-            logger.info("Auto-analysis complete for meeting %d", meeting.id)
+            from app.models.job import Job
+            from app.tasks.ai_tasks import analyze_meeting_background
+            
+            import uuid
+            job_id = f"ai_job_{uuid.uuid4().hex[:8]}"
+            new_job = Job(
+                id=job_id,
+                type="ai_analysis",
+                status="pending",
+                result_id=meeting.id
+            )
+            db.add(new_job)
+            await db.commit()
+
+            analyze_meeting_background.delay(meeting.id, job_id)
+            logger.info("Queued auto-analysis for meeting %d", meeting.id)
         except Exception as e:
-            logger.error("Auto-analysis failed for meeting %d: %s", meeting.id, e)
+            logger.error("Auto-analysis failed to queue for meeting %d: %s", meeting.id, e)
 
     from app.core.redis import invalidate_cache
     await invalidate_cache(f"user:{current_user.id}:")

@@ -284,13 +284,24 @@ async def save_transcript(
     analysis_status = "saved"
     if payload.auto_analyze:
         try:
-            from app.ai.orchestrator import AIAgentOrchestrator
-            orchestrator = AIAgentOrchestrator(db, meeting.id)
-            await orchestrator.run_pipeline()
+            from app.models.job import Job
+            from app.tasks.ai_tasks import analyze_meeting_background
+            
+            job_id = f"ai_job_{uuid.uuid4().hex[:8]}"
+            new_job = Job(
+                id=job_id,
+                type="ai_analysis",
+                status="pending",
+                result_id=meeting.id
+            )
+            db.add(new_job)
+            await db.commit()
+
+            analyze_meeting_background.delay(meeting.id, job_id)
             analysis_status = "analyzed"
-            logger.info("AI analysis complete for meeting %d", meeting.id)
+            logger.info("Queued auto-analysis for meeting %d", meeting.id)
         except Exception as e:
-            logger.error("AI analysis failed for meeting %d: %s", meeting.id, e, exc_info=True)
+            logger.error("Auto-analysis failed to queue for meeting %d: %s", meeting.id, e, exc_info=True)
             analysis_status = "analysis_failed"
 
     return SaveTranscriptResponse(
