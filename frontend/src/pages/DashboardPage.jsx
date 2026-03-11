@@ -119,7 +119,7 @@ export default function DashboardPage() {
         { label: 'Total Meetings', value: s.total_meetings || 0, icon: Video, color: '#6366f1', bg: 'rgba(99,102,241,0.1)' },
         { label: 'Analyzed', value: s.analyzed_meetings || 0, icon: Brain, color: '#8b5cf6', bg: 'rgba(139,92,246,0.1)' },
         { label: 'Tasks Created', value: totalTasks, icon: CheckCircle, color: '#10b981', bg: 'rgba(16,185,129,0.1)' },
-        { label: 'Completion', value: `${completionPct}%`, icon: TrendingUp, color: '#f59e0b', bg: 'rgba(245,158,11,0.1)' },
+        { label: 'Avg Duration (m)', value: s.avg_meeting_duration || 0, icon: Clock, color: '#f59e0b', bg: 'rgba(245,158,11,0.1)' },
     ];
 
     const aiFeatures = [

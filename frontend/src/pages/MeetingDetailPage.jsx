@@ -574,18 +574,44 @@ export default function MeetingDetailPage() {
                                             </p>
                                             {meetingStats?.data?.speaking_time && Object.keys(meetingStats.data.speaking_time).length > 0 && (
                                                 <div style={{ marginTop: '20px', paddingTop: '16px', borderTop: '1px solid var(--border-color)' }}>
-                                                    <div className="ac-title" style={{ marginBottom: '12px', fontSize:'0.9rem' }}><BarChart3 size={14} style={{ color: 'var(--accent-primary)' }} /> Speaking Time Analytics</div>
-                                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                                                        {Object.entries(meetingStats.data.speaking_time).sort((a,b) => b[1] - a[1]).map(([speaker, percentage]) => (
-                                                            <div key={speaker} style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                                                                <div style={{ width: '120px', fontSize: '0.85rem', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{speaker}</div>
-                                                                <div style={{ flex: 1, backgroundColor: 'var(--bg-secondary)', height: '8px', borderRadius: '4px', overflow:'hidden' }}>
-                                                                    <div style={{ width: `${percentage}%`, backgroundColor: 'var(--accent-primary)', height: '100%', borderRadius: '4px' }} />
-                                                                </div>
-                                                                <div style={{ width: '40px', fontSize: '0.8rem', color: 'var(--text-muted)', textAlign: 'right' }}>{percentage}%</div>
-                                                            </div>
-                                                        ))}
+                                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                                                        <div className="ac-title" style={{ margin: 0, fontSize:'0.9rem' }}><BarChart3 size={14} style={{ color: 'var(--accent-primary)' }} /> Speaking Analytics & Engagement</div>
+                                                        {meetingStats?.data?.engagement_score !== undefined && (
+                                                            <div className="badge badge-success" style={{ fontSize: '0.8rem' }}>Engagement Score: {meetingStats.data.engagement_score}/100</div>
+                                                        )}
                                                     </div>
+                                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                                        {Object.entries(meetingStats.data.speaking_time).sort((a,b) => b[1] - a[1]).map(([speaker, percentage]) => {
+                                                            const insights = meetingStats.data.speaker_insights?.[speaker] || {};
+                                                            return(
+                                                            <div key={speaker} style={{ display: 'flex', flexDirection:'column', gap: '4px' }}>
+                                                                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                                                                    <div style={{ width: '120px', fontSize: '0.85rem', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{speaker}</div>
+                                                                    <div style={{ flex: 1, backgroundColor: 'var(--bg-secondary)', height: '8px', borderRadius: '4px', overflow:'hidden' }}>
+                                                                        <div style={{ width: `${percentage}%`, backgroundColor: 'var(--accent-primary)', height: '100%', borderRadius: '4px' }} />
+                                                                    </div>
+                                                                    <div style={{ width: '40px', fontSize: '0.8rem', color: 'var(--text-muted)', textAlign: 'right' }}>{percentage}%</div>
+                                                                </div>
+                                                                <div style={{ paddingLeft: '132px', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                                                                    {insights.messages} msgs • {insights.questions_asked} questions • {insights.interruptions} interruptions
+                                                                </div>
+                                                            </div>
+                                                        )})}
+                                                    </div>
+                                                    {meetingStats?.data?.heatmap?.length > 0 && (
+                                                        <div style={{ marginTop: '16px' }}>
+                                                            <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '8px' }}>Conversation Activity Heatmap (per minute)</div>
+                                                            <div style={{ display: 'flex', gap: '2px', alignItems: 'flex-end', height: '30px' }}>
+                                                                {meetingStats.data.heatmap.map((count, i) => {
+                                                                    const maxCount = Math.max(...meetingStats.data.heatmap, 1);
+                                                                    const heightObj = count === 0 ? '10%' : `${(count / maxCount) * 100}%`;
+                                                                    return (
+                                                                        <div key={i} title={`Minute ${i}: ${count} interactions`} style={{ flex: 1, backgroundColor: 'var(--accent-primary)', opacity: count===0 ? 0.05 : 0.4 + (count/maxCount)*0.6, height: heightObj, borderRadius: '2px 2px 0 0' }} />
+                                                                    );
+                                                                })}
+                                                            </div>
+                                                        </div>
+                                                    )}
                                                 </div>
                                             )}
                                         </div>
@@ -603,6 +629,16 @@ export default function MeetingDetailPage() {
                                                         <li className="ac-empty">No key points extracted yet</li>
                                                 }
                                             </ul>
+                                            {meetingStats?.data?.rule_based_decisions && meetingStats.data.rule_based_decisions.length > 0 && (
+                                                <div style={{ marginTop: '16px', paddingTop: '16px', borderTop: '1px solid var(--border-color)' }}>
+                                                    <div className="ac-title" style={{ fontSize:'0.9rem', marginBottom: '8px' }}><Check size={14} style={{ color: '#10b981' }} /> Rules-Engine: Detected Decisions</div>
+                                                    <ul className="ac-list">
+                                                        {meetingStats.data.rule_based_decisions.map((d, i) => (
+                                                            <li key={i} style={{ fontSize: '0.85rem' }}>{d}</li>
+                                                        ))}
+                                                    </ul>
+                                                </div>
+                                            )}
                                         </div>
                                     </div>
                                 </motion.div>

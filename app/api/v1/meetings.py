@@ -331,6 +331,12 @@ async def dashboard(
         for r in recent_rows
     ]
 
+    # Calculate meeting durations
+    durations_res = await db.execute(select(Meeting.created_at, Meeting.ended_at).where(Meeting.user_id == uid, Meeting.ended_at != None))
+    durations = [(r.ended_at - r.created_at).total_seconds() / 60.0 for r in durations_res.all()]
+    avg_duration = sum(durations) / len(durations) if durations else 0.0
+    longest_duration = max(durations) if durations else 0.0
+
     response_data = {
         "total_meetings": stats_row.total_meetings or 0,
         "total_tasks": stats_row.total_tasks or 0,
@@ -341,6 +347,8 @@ async def dashboard(
         "recent_meetings": recent_enriched,
         "risk_count": 0,
         "analyzed_meetings": stats_row.analyzed_meetings or 0,
+        "avg_meeting_duration": round(avg_duration, 1),
+        "longest_meeting": round(longest_duration, 1),
     }
 
     await set_cache(cache_key, response_data, ttl=60)
@@ -393,8 +401,18 @@ async def meeting_stats(
     
     ai_check = await db.execute(select(AIResult).filter(AIResult.meeting_id == meeting_id))
 
-    # Calculate speaking time analytics (Rule-based, no LLM)
+    # Calculate speaking time analytics, engagement, heatmap
     speaking_time: dict[str, float] = {}
+    speaker_insights: dict[str, dict] = {}
+    heatmap_dict: dict[int, int] = {}
+    prev_speaker = None
+    prev_end_time = 0.0
+    topic_changes = 0
+
+    import re
+    decision_keywords = re.compile(r'\b(decided|approved|finalized|agreed|confirmed)\b', re.IGNORECASE)
+    rule_based_decisions = []
+
     for sub in subtitles:
         spk = sub.speaker_name or sub.speaker_id or "Speaker"
         # calculate approx time
@@ -402,13 +420,49 @@ async def meeting_stats(
         if time_diff == 0:
             time_diff = max(2.0, len(sub.text) / 15.0)  # estimate if missing
         
+        if spk not in speaker_insights:
+            speaker_insights[spk] = {"speaking_time": 0.0, "messages": 0, "questions_asked": 0, "interruptions": 0}
+        
+        # update insights
+        speaker_insights[spk]["speaking_time"] += time_diff
+        speaker_insights[spk]["messages"] += 1
+        if "?" in sub.text:
+            speaker_insights[spk]["questions_asked"] += 1
+            
+        if prev_speaker and prev_speaker != spk and sub.start_time < prev_end_time + 1.0:
+            speaker_insights[spk]["interruptions"] += 1
+        
+        if prev_end_time > 0 and sub.start_time - prev_end_time > 15.0:
+            topic_changes += 1
+
+        prev_speaker = spk
+        prev_end_time = max(prev_end_time, sub.end_time)
+
         speaking_time[spk] = speaking_time.get(spk, 0) + time_diff
         
+        # update heatmap (minute buckets)
+        minute_idx = int(sub.start_time // 60)
+        heatmap_dict[minute_idx] = heatmap_dict.get(minute_idx, 0) + 1
+        
+        # extract decisions
+        if decision_keywords.search(sub.text) and len(rule_based_decisions) < 20:
+            rule_based_decisions.append(sub.text.strip())
+
     # convert absolute seconds into percentages summing up to 100%
     total_spk_time = sum(speaking_time.values())
     if total_spk_time > 0:
         for k in speaking_time:
             speaking_time[k] = round((speaking_time[k] / total_spk_time) * 100, 1)
+
+    heatmap = []
+    if heatmap_dict:
+        max_min = max(heatmap_dict.keys())
+        for i in range(max_min + 1):
+            heatmap.append(heatmap_dict.get(i, 0))
+
+    duration_mins = (duration or 1.0) / 60.0
+    subtitle_density = len(subtitles) / max(1.0, duration_mins)
+    engagement_score = min(100, int((len(speakers) * 10) + (subtitle_density * 2) + (topic_changes * 5))) if subtitles else 0
 
     return {
         "meeting_id": meeting_id,
@@ -419,6 +473,10 @@ async def meeting_stats(
         "duration_seconds": duration,
         "speakers": speakers,
         "speaking_time": speaking_time,
+        "speaker_insights": speaker_insights,
+        "engagement_score": engagement_score,
+        "heatmap": heatmap,
+        "rule_based_decisions": rule_based_decisions,
     }
 
 

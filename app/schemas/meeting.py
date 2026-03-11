@@ -67,7 +67,15 @@ class DashboardStats(BaseModel):
     recent_meetings: list[MeetingListOut]
     risk_count: int
     analyzed_meetings: int = 0
+    avg_meeting_duration: float = 0.0
+    longest_meeting: float = 0.0
 
+
+class SpeakerInsights(BaseModel):
+    speaking_time: float = 0
+    messages: int = 0
+    questions_asked: int = 0
+    interruptions: int = 0
 
 class MeetingStats(BaseModel):
     """Per-meeting statistics."""
@@ -79,3 +87,7 @@ class MeetingStats(BaseModel):
     duration_seconds: float | None = None
     speakers: list[str] = []
     speaking_time: dict[str, float] = {}
+    speaker_insights: dict[str, SpeakerInsights] = {}
+    engagement_score: int = 0
+    heatmap: list[int] = []
+    rule_based_decisions: list[str] = []
