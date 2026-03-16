@@ -149,9 +149,9 @@ TASK 11: Live Transcription WS
 **Backend**:
 - `app/core/socket_manager.py` - ConnectionManager with broadcast(), disconnect cleanup
 - `ai/speech_service.py` - process_audio_chunk(base64_audio) → Whisper → Pyannote → Subtitle
-- `api/v1/process_meeting.py` - WS /ws/meeting/{id} → auth → participant tracking → audio→transcribe→broadcast
+- `api/v1/process_meeting.py` - WS /ws/meeting/{id} → auth → participant tracking → audio→transcribe→broadcast + caption routing
 **Frontend**:
-- `pages/LiveMeetingPage.jsx` - MediaRecorder, audio chunks every 3s, live subtitle feed, participant list, audio level viz"
+- `pages/LiveMeetingPage.jsx` - Resilient WebRTC connection logic, tab-switch visible logic, MediaRecorder, audio chunks every 3s, real-time shared subtitle broadcast across connected clients."
 
 ```
 TASK 12: Celery Background Jobs
@@ -193,15 +193,15 @@ TASK 15: Production Readiness
 
 ## 🚀 FINAL VALIDATION CHECKLIST
 ```
-[ ] docker-compose up → All services healthy
-[ ] Register → Login → Dashboard stats load
-[ ] Upload transcript → Analyze (<60s) → 5 tabs populate
-[ ] RAG chat → Cited answers with timestamps
-[ ] Tasks → Drag-drop → GitHub export
-[ ] Live meeting → 2 browser tabs → Real-time subtitles sync
-[ ] API docs: http://localhost:8000/docs → All endpoints work
-[ ] Tests: pytest → 80%+ coverage
-[ ] Frontend: npm run build → 0 errors
+[x] docker-compose up → All services healthy
+[x] Register → Login → Dashboard stats load
+[x] Upload transcript → Analyze (<60s) → 5 tabs populate
+[x] RAG chat → Cited answers with timestamps
+[x] Tasks → Drag-drop → GitHub export
+[x] Live meeting → 2 browser tabs → Real-time subtitles sync (With background resilience)
+[x] API docs: http://localhost:8000/docs → All endpoints work
+[x] Tests: pytest → 80%+ coverage
+[x] Frontend: npm run build → 0 errors
 ```
 
 ## 📁 COMPLETE FILE COUNT: 112 Files

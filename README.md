@@ -1,6 +1,15 @@
-# AI Meeting Intelligence System v2.1.0
+# 🎙️ AI Meeting Intelligence System v2.1.0
 
-Production-grade AI-powered meeting intelligence platform with transcript analysis, real-time subtitles, task generation, RAG queries, and GitHub integration.
+✨ **Production-grade AI-powered meeting intelligence platform** with transcript analysis, real-time sync subtitles, automated task generation, RAG queries, and GitHub integration.
+
+<div align="center">
+  <img src="https://img.shields.io/badge/Python-3.12+-blue.svg" alt="Python Version" />
+  <img src="https://img.shields.io/badge/React-19-blue.svg" alt="React" />
+  <img src="https://img.shields.io/badge/Gemini-1.5%20Pro-orange.svg" alt="Gemini" />
+  <img src="https://img.shields.io/badge/Status-Production%20Ready-success.svg" alt="Status" />
+</div>
+
+<br/>
 
 ## 🚀 Quick Start
 
@@ -106,12 +115,14 @@ Double-click `start_dev.bat` to launch both backend and frontend servers automat
 - **Task Management**: Auto-generate tasks from AI, Kanban board (Todo/In Progress/Done)
 - **Dashboard**: Stats overview, recent meetings, task breakdown
 
-### 🔴 Live Meeting Features
-- **Real-Time Transcription**: WebSocket-based audio streaming
-- **Whisper STT**: Speech-to-text with OpenAI Whisper
-- **Speaker Diarization**: Pyannote.audio for speaker attribution (requires HF_API_KEY)
-- **Live Subtitles**: Broadcast subtitles to all connected participants
-- **Participant Tracking**: Join/leave events, participant count
+### 📡 Live Meeting Features
+- **Resilient WebRTC Signaling**: Reliable peer-to-peer audio/video streaming with automatic connection recovery.
+- **WebSocket-based Real-time Audio Capture**: Captures clear audio via the MediaRecorder API.
+- **Whisper STT**: Industry-leading Speech-to-text with OpenAI Whisper.
+- **Speaker Diarization**: Pyannote.audio for accurate speaker attribution.
+- **Real-Time Subtitle Broadcasting**: Local SpeechRecognition API transcripts are instantly broadcast to all room participants via WebSocket, creating synchronized global subtitles.
+- **Background-Tab Resilience**: Smart `visibilitychange` listeners automatically pause the microphone when switching tabs, gracefully reconnecting upon return to prevent hardware lockups.
+- **Participant Tracking**: Accurate real-time tracking of join/leave events and participant count.
 
 ### 🔄 Integrations
 - **GitHub Export**: Export meeting tasks as GitHub Issues
