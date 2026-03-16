@@ -436,13 +436,13 @@ User → POST /meetings/{id}/export-linear { team_id: "..." }
 - **External Export** — Push tasks to **GitHub**, **Jira**, and **Linear** with one click.
 
 ### 8.4 Live Meeting
-- WebRTC-based real-time audio and video conferencing (up to 50 participants)
-- WebSocket-based real-time audio capture (MediaRecorder API)
-- Real-time live subtitles from Whisper STT
-- Collaborative UI: Real-time Whiteboard, Live Polls, Q&A, and Emoji Reactions
-- Audio level visualization
-- Participant count tracking and invite link generation
-- Transcript download during/after meeting
+- **Resilient WebRTC Signaling**: Reliable peer-to-peer audio/video streaming (up to 50 participants) with automatic ICE restarts and strong type-safe WebSocket routing.
+- **WebSocket-based Real-time Audio Capture**: Uses the MediaRecorder API to capture audio.
+- **Real-Time Subtitle Broadcasting**: Local SpeechRecognition API transcripts are instantly broadcast to all remote participants in the room via WebSocket (`type: 'caption'`), creating synchronized global subtitles.
+- **Background-Tab Resilience**: Smart `visibilitychange` listeners automatically pause the microphone and SpeechRecognition engine when the user switches tabs, and gracefully reconnects them upon returning to prevent hardware lockups or security blockages.
+- **Collaborative UI**: Real-time Whiteboard, Live Polls, Q&A, and Emoji Reactions.
+- **Audio Level Visualization & Accurate Participant Tracking**: Accurate live indicators of room size and speaker states.
+- **Transcript Download**: Download the meeting transcript during or after the meeting.
 
 ### 8.5 Task Management & Analytics
 - Complete manual task CRUD (Create, Read, Update, Delete) directly connected to meetings.
@@ -586,6 +586,8 @@ docker-compose up --build
 7. **Fully Asynchronous Architecture** — Entire backend refactored to use `async`/`await` for Database I/O, API responses, and external LLM requests, massively increasing performance and scalability under load.
 
 8. **User Data Isolation** — Every query filters by `user_id` to ensure users can only access their own meetings, tasks, and analysis results.
+
+9. **Hardware-Resilient Subtitles** — The frontend leverages the browser's native `SpeechRecognition` API but wraps it in a custom watchdog with `visibilitychange` detection. This ensures the microphone cleanly detaches when the browser is minimized to save battery and avoid privacy errors, then seamlessly cold-restarts when the user returns.
 
 14. SECURITY IMPLEMENTATIONS
 
