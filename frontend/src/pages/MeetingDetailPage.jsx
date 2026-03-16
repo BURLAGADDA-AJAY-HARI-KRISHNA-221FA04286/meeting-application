@@ -441,9 +441,16 @@ export default function MeetingDetailPage() {
                 <div className="transcript-toggle" onClick={() => setShowTranscript(!showTranscript)} role="button" tabIndex={0}>
                     <span style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 700 }}>
                         <FileText size={18} /> Transcript
-                        {meeting.transcript && <span className="badge badge-info" style={{ fontWeight: 500, fontSize: '0.7rem' }}>
-                            {meeting.transcript.length.toLocaleString()} chars
-                        </span>}
+                        {meeting.transcript && (
+                            <>
+                                <span className="badge badge-info" style={{ fontWeight: 500, fontSize: '0.7rem' }}>
+                                    {meeting.transcript.length.toLocaleString()} chars
+                                </span>
+                                <span className="badge badge-warning" style={{ fontWeight: 500, fontSize: '0.7rem', backgroundColor: 'rgba(245, 158, 11, 0.1)', color: '#f59e0b' }}>
+                                    ~{Math.max(1, Math.ceil(meeting.transcript.split(/\s+/).length / 200))} min read
+                                </span>
+                            </>
+                        )}
                     </span>
                     <div style={{ display: 'flex', gap: 8, alignItems: 'center' }} onClick={(e) => e.stopPropagation()}>
                         {showTranscript && (
@@ -506,9 +513,19 @@ export default function MeetingDetailPage() {
                                         borderL = '4px solid #3b82f6';
                                     }
 
+                                    // Highlight search term
+                                    let content = line;
+                                    if (transcriptSearch) {
+                                        const regex = new RegExp(`(${transcriptSearch})`, 'gi');
+                                        const parts = line.split(regex);
+                                        content = parts.map((part, i) => 
+                                            regex.test(part) ? <mark key={i} style={{ backgroundColor: '#fef08a', color: '#854d0e', borderRadius: '2px', padding: '0 2px' }}>{part}</mark> : part
+                                        );
+                                    }
+
                                     return (
                                         <div key={idx} style={{ padding: '4px 8px', backgroundColor: bg, borderLeft: borderL, marginBottom: 4, borderRadius: 2 }}>
-                                            {line}
+                                            {content}
                                         </div>
                                     );
                                 })}

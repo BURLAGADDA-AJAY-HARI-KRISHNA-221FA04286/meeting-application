@@ -2,13 +2,12 @@
 AI API — Analysis Pipeline, Results, and RAG Q&A
 """
 import logging
-from fastapi import APIRouter, Depends, HTTPException, status, Request
+from fastapi import APIRouter, Depends, HTTPException, status, Request, BackgroundTasks
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.rate_limit import limiter
-from sqlalchemy.ext.asyncio import AsyncSession
 
 import uuid
 from app.db.session import get_db
@@ -19,7 +18,7 @@ from app.models.ai_result import AIResult
 from app.models.job import Job
 from app.ai.orchestrator import AIAgentOrchestrator
 from app.ai.rag import rag_store
-from app.tasks.ai_tasks import analyze_meeting_background
+from app.tasks.ai_tasks import analyze_meeting_background, _run_ai_pipeline
 
 router = APIRouter(prefix="/ai", tags=["ai"])
 logger = logging.getLogger("meetingai.ai")
@@ -52,6 +51,7 @@ class RAGResponse(BaseModel):
 async def analyze_meeting(
     request: Request,
     meeting_id: int,
+    background_tasks: BackgroundTasks,
     force: bool = False,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -94,8 +94,37 @@ async def analyze_meeting(
         db.add(new_job)
         await db.commit()
 
-        # Enqueue celery background task
-        analyze_meeting_background.delay(meeting_id, job_id)
+        # Define an async fallback since Redis/Celery is not running
+        async def run_ai():
+            try:
+                # Update status
+                from app.db.session import AsyncSessionLocal
+                from sqlalchemy import update
+                async with AsyncSessionLocal() as session:
+                    await session.execute(update(Job).where(Job.id == job_id).values(status="processing", progress=10))
+                    await session.commit()
+
+                # Run main logic
+                result_id = await _run_ai_pipeline(meeting_id, job_id)
+                rag_store.invalidate(meeting_id)
+
+                async with AsyncSessionLocal() as session:
+                    await session.execute(update(Job).where(Job.id == job_id).values(
+                        status="completed", progress=100, result_id=result_id
+                    ))
+                    await session.commit()
+            except Exception as exc:
+                logger.error(f"Analysis failed for job {job_id}: {exc}", exc_info=True)
+                from app.db.session import AsyncSessionLocal
+                from sqlalchemy import update
+                async with AsyncSessionLocal() as session:
+                    await session.execute(update(Job).where(Job.id == job_id).values(
+                        status="failed", error=str(exc)
+                    ))
+                    await session.commit()
+
+        # Enqueue background task
+        background_tasks.add_task(run_ai)
 
         return {
             "status": "processing",

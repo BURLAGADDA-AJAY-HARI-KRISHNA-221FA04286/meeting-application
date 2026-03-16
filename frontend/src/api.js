@@ -265,7 +265,9 @@ export function createMeetingWebSocket(meetingId) {
     const token = getAccessToken();
     if (!token) throw new Error('Authentication required for WebSocket connection');
     const wsBase = API_BASE.replace('https://', 'wss://').replace('http://', 'ws://');
-    return new WebSocket(`${wsBase}/ws/meeting/${meetingId}`, ['bearer', token]);
+    const url = new URL(`${wsBase}/ws/meeting/${meetingId}`);
+    url.searchParams.set('token', token);
+    return new WebSocket(url.toString());
 }
 
 // ── Video Meeting ──
@@ -280,8 +282,17 @@ export function createVideoMeetingWebSocket(roomId, displayName) {
     const token = getAccessToken();
     if (!token) throw new Error('Authentication required for WebSocket connection');
     const wsBase = API_BASE.replace('https://', 'wss://').replace('http://', 'ws://');
-    const params = new URLSearchParams({ display_name: displayName || 'User' });
-    return new WebSocket(`${wsBase}/video-meeting/ws/${roomId}?${params}`, ['bearer', token]);
+    const params = new URLSearchParams({ 
+        display_name: displayName || 'User',
+        token: token 
+    });
+    return new WebSocket(`${wsBase}/video-meeting/ws/${roomId}?${params}`);
 }
 
+// ── System Health ──
+export const systemAPI = {
+    getHealth: () => axios.get(`${API_BASE.replace('/api/v1', '')}/health`),
+};
+
 export default api;
+

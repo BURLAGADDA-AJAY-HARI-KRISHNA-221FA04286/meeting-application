@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Outlet, NavLink, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { systemAPI } from '../api';
 import {
     Brain, LayoutDashboard, Video, SquareCheck, Settings,
     LogOut, Search, ChevronLeft, ChevronRight, Plus, Menu,
@@ -18,12 +19,32 @@ export default function Layout() {
     const [showPalette, setShowPalette] = useState(false);
     const [searchQuery, setSearchQuery] = useState('');
     const [time, setTime] = useState('');
+    const [systemHealth, setSystemHealth] = useState({ online: true, ai_enabled: true });
 
     useEffect(() => {
         const tick = () => setTime(new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
         tick();
-        const interval = setInterval(tick, 30000);
-        return () => clearInterval(interval);
+        const timeInterval = setInterval(tick, 30000);
+
+        const checkHealth = async () => {
+            try {
+                const res = await systemAPI.getHealth();
+                setSystemHealth({
+                    online: res.data?.status === 'ok',
+                    ai_enabled: res.data?.ai_enabled === true
+                });
+            } catch (err) {
+                setSystemHealth({ online: false, ai_enabled: false });
+            }
+        };
+
+        checkHealth();
+        const healthInterval = setInterval(checkHealth, 30000);
+
+        return () => {
+            clearInterval(timeInterval);
+            clearInterval(healthInterval);
+        };
     }, []);
 
     const navigateAndClose = useCallback((to) => {
@@ -192,12 +213,12 @@ export default function Layout() {
                 </nav>
 
                 {!collapsed && (
-                    <div className="sidebar-status">
+                    <div className="sidebar-status" title={systemHealth.online ? "Backend is reachable" : "Backend unreachable"}>
                         <div className="status-indicator">
-                            <div className="status-dot online" />
-                            <span>AI Online</span>
+                            <div className={`status-dot ${systemHealth.online ? 'online' : 'offline'}`} style={!systemHealth.online ? { backgroundColor: '#ef4444', boxShadow: '0 0 8px #ef4444' } : {}} />
+                            <span>{systemHealth.online ? (systemHealth.ai_enabled ? 'AI Online' : 'API Online') : 'Offline'}</span>
                         </div>
-                        <span className="status-version">v2.0</span>
+                        <span className="status-version">v2.1</span>
                     </div>
                 )}
 

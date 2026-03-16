@@ -76,6 +76,7 @@ export default function VideoMeetingPage() {
 
     // ── Participants ──
     const [participants, setParticipants] = useState([]);
+    const [isHost, setIsHost] = useState(false);
 
     // ── Polls (inline) ──
     const [polls, setPolls] = useState([]);
@@ -135,10 +136,16 @@ export default function VideoMeetingPage() {
     useEffect(() => {
         if (roomId) {
             videoMeetingAPI.getRoomInfo(roomId)
-                .then(res => setRoomInfo(res.data))
+                .then(res => {
+                    setRoomInfo(res.data);
+                    // Determine if current user is the host
+                    if (res.data.host_user_id && user?.id) {
+                        setIsHost(Number(res.data.host_user_id) === Number(user.id));
+                    }
+                })
                 .catch(() => { /* room info is optional */ });
         }
-    }, [roomId]);
+    }, [roomId, user?.id]);
 
     // Main setup
     useEffect(() => {
@@ -205,6 +212,14 @@ export default function VideoMeetingPage() {
                                     confidence: rec.results?.[event.resultIndex]?.[0]?.confidence || 0.9,
                                 });
                                 setCaptions(prev => [...prev, { text: finalText, speaker: user?.full_name || 'You', time: Date.now(), final: true }].slice(-8));
+                                // Broadcast caption to other participants
+                                if (wsRef.current?.readyState === WebSocket.OPEN) {
+                                    wsRef.current.send(JSON.stringify({
+                                        type: 'caption',
+                                        text: finalText,
+                                        speaker: user?.full_name || 'You',
+                                    }));
+                                }
                             } else if (interimText) {
                                 setCaptions(prev => [...prev.filter(c => c.final), { text: interimText, speaker: user?.full_name || 'You', time: Date.now(), final: false }]);
                             }
@@ -212,24 +227,27 @@ export default function VideoMeetingPage() {
                         rec.onerror = (e) => {
                             lastRecognitionActivityRef.current = Date.now();
                             if (e.error === 'not-allowed' || e.error === 'service-not-allowed') {
-                                captionsOnRef.current = false; setCaptionsOn(false); return;
+                                console.warn('[Captions] Mic access denied or not allowed right now. Retrying later if visible.');
+                                return; // Do not permanently turn off state to allow recovery
                             }
                             if (e.error === 'no-speech' || e.error === 'aborted') return;
                             console.warn('[Captions] error:', e.error, '— restart in 800ms');
-                            if (captionsOnRef.current) {
+                            if (captionsOnRef.current && document.visibilityState === 'visible') {
                                 if (recognitionRestartTimerRef.current) clearTimeout(recognitionRestartTimerRef.current);
                                 recognitionRestartTimerRef.current = setTimeout(() => startFresh(), 800);
                             }
                         };
                         rec.onend = () => {
-                            if (!captionsOnRef.current) return;
+                            if (!captionsOnRef.current || document.visibilityState !== 'visible') return;
                             if (recognitionRestartTimerRef.current) clearTimeout(recognitionRestartTimerRef.current);
                             recognitionRestartTimerRef.current = setTimeout(() => startFresh(), 250);
                         };
                         try { rec.start(); } catch (e) {
                             console.warn('[Captions] start failed:', e.message);
                             if (recognitionRestartTimerRef.current) clearTimeout(recognitionRestartTimerRef.current);
-                            recognitionRestartTimerRef.current = setTimeout(() => startFresh(), 500);
+                            if (document.visibilityState === 'visible') {
+                                recognitionRestartTimerRef.current = setTimeout(() => startFresh(), 1500);
+                            }
                         }
                     };
                     return startFresh;
@@ -242,23 +260,32 @@ export default function VideoMeetingPage() {
                     setCaptionsOn(true);
                     const startFresh = buildStartFresh();
                     startFreshRecognitionRef.current = startFresh;
-                    startFresh();
+                    
+                    if (document.visibilityState === 'visible') {
+                        startFresh();
+                    }
 
-                    // Watchdog
+                    // Watchdog: Less aggressive, check if we're visible and it died silently
                     recognitionWatchdogRef.current = setInterval(() => {
-                        if (!captionsOnRef.current) return;
-                        if (Date.now() - lastRecognitionActivityRef.current > 20000) {
-                            console.warn('[Captions] watchdog: force restarting');
+                        if (!captionsOnRef.current || document.visibilityState !== 'visible') return;
+                        if (Date.now() - lastRecognitionActivityRef.current > 15000) {
+                            console.log('[Captions] Watchdog: restarting silently stalled recognition');
                             if (recognitionRestartTimerRef.current) clearTimeout(recognitionRestartTimerRef.current);
                             startFreshRecognitionRef.current?.();
                         }
-                    }, 8000);
+                    }, 10000);
 
                     // Resume on tab visibility
                     const onVisible = () => {
-                        if (document.visibilityState === 'visible' && captionsOnRef.current) {
+                        if (!captionsOnRef.current) return;
+                        if (document.visibilityState === 'visible') {
                             if (recognitionRestartTimerRef.current) clearTimeout(recognitionRestartTimerRef.current);
-                            recognitionRestartTimerRef.current = setTimeout(() => startFreshRecognitionRef.current?.(), 400);
+                            recognitionRestartTimerRef.current = setTimeout(() => startFreshRecognitionRef.current?.(), 1000);
+                        } else {
+                            // Stop recognition when hidden to prevent it getting stuck in background
+                            if (recognitionRef.current) {
+                                try { recognitionRef.current.stop(); } catch {}
+                            }
                         }
                     };
                     document.addEventListener('visibilitychange', onVisible);
@@ -401,6 +428,10 @@ export default function VideoMeetingPage() {
                             existing.forEach(p => map.set(String(p.id), p));
                             return Array.from(map.values());
                         });
+                        // Determine host from WebSocket room-state
+                        if (data.host_user_id && user?.id) {
+                            setIsHost(Number(data.host_user_id) === Number(user.id));
+                        }
                         // CRITICAL FIX: Initiate WebRTC to ALL existing peers
                         // The new joiner must call createOffer to each person already in the room
                         for (const p of data.participants) {
@@ -512,6 +543,18 @@ export default function VideoMeetingPage() {
                             toast(data.enabled ? '🔒 Meeting has been locked' : '🔓 Meeting has been unlocked');
                         }
                         break;
+                    case 'caption': {
+                        // Remote caption from another participant
+                        if (captionsOnRef.current) {
+                            setCaptions(prev => [...prev, {
+                                text: data.text,
+                                speaker: data.speaker_name || data.speaker || 'Someone',
+                                time: Date.now(),
+                                final: true,
+                            }].slice(-8));
+                        }
+                        break;
+                    }
                     default:
                         break;
                 }
@@ -618,13 +661,27 @@ export default function VideoMeetingPage() {
         };
         pc.ontrack = (event) => {
             console.log('[WebRTC] Got remote track from', userId);
-            setPeers(prev => ({ ...prev, [userId]: { stream: event.streams[0] } }));
+            setPeers(prev => ({ ...prev, [userId]: { stream: event.streams[0], connectionState: 'connected' } }));
         };
         pc.onconnectionstatechange = () => {
-            console.log('[WebRTC] Connection state with', userId, ':', pc.connectionState);
-            if (pc.connectionState === 'failed') {
+            const state = pc.connectionState;
+            console.log('[WebRTC] Connection state with', userId, ':', state);
+            // Force re-render by updating peers state with connection status
+            setPeers(prev => {
+                if (!prev[userId]) return prev;
+                return { ...prev, [userId]: { ...prev[userId], connectionState: state } };
+            });
+            if (state === 'failed') {
                 console.warn('[WebRTC] Connection failed with', userId, '— attempting ICE restart');
                 pc.restartIce();
+            } else if (state === 'disconnected') {
+                // Attempt ICE restart on disconnection too
+                setTimeout(() => {
+                    if (pc.connectionState === 'disconnected') {
+                        console.warn('[WebRTC] Still disconnected with', userId, '— attempting ICE restart');
+                        pc.restartIce();
+                    }
+                }, 3000);
             }
         };
         return pc;
@@ -1093,7 +1150,8 @@ export default function VideoMeetingPage() {
        PARTICIPANT COUNT
        ═══════════════════════════════════════════════ */
     const peerCount = Object.keys(peers).length;
-    const totalParticipants = peerCount + 1;
+    // Use participants (from signaling) for accurate count, not peers (WebRTC connections)
+    const totalParticipants = Math.max(participants.length + 1, peerCount + 1);
 
     // Calculate grid class
     const getGridClass = () => {
@@ -1208,7 +1266,7 @@ export default function VideoMeetingPage() {
                         {/* Remote Peers */}
                         {Object.entries(peers).map(([id, peer]) => {
                             const peerInfo = participants.find(p => String(p.id) === String(id));
-                            const pcState = peerConnections.current[id]?.connectionState || 'new';
+                            const pcState = peer.connectionState || peerConnections.current[id]?.connectionState || 'new';
                             const isConnecting = pcState === 'connecting' || pcState === 'new';
                             return (
                                 <div key={id} className={`vm-video-tile${isConnecting ? '' : ''}`}>
@@ -1278,7 +1336,7 @@ export default function VideoMeetingPage() {
                                     onSendMessage={sendChatMessage}
                                     participants={participants}
                                     currentUser={user}
-                                    isAdmin={true}
+                                    isAdmin={isHost}
                                     chatEnabled={communityChatEnabled}
                                     privateChatEnabled={privateChatEnabled}
                                     onToggleCommunityChat={() => {
@@ -1309,7 +1367,7 @@ export default function VideoMeetingPage() {
                                         <div className="vm-participant-avatar">{(user?.full_name || 'U')[0].toUpperCase()}</div>
                                         <div className="vm-participant-info">
                                             <span className="vm-participant-name">{user?.full_name || 'You'} (You)</span>
-                                            <span className="vm-participant-role">Host</span>
+                                            <span className="vm-participant-role">{isHost ? 'Host' : 'Participant'}</span>
                                         </div>
                                         <div className="vm-participant-status">
                                             {handRaised && <span>✋</span>}
@@ -1322,43 +1380,51 @@ export default function VideoMeetingPage() {
                                             <div className="vm-participant-avatar">{(p.name || 'U')[0].toUpperCase()}</div>
                                             <div className="vm-participant-info">
                                                 <span className="vm-participant-name">{p.name}</span>
+                                                {roomInfo?.host_user_id && Number(roomInfo.host_user_id) === Number(p.id) && (
+                                                    <span className="vm-participant-role">Host</span>
+                                                )}
                                             </div>
                                             <div className="vm-participant-status">
                                                 {raisedHands.has(p.name) && <span>✋</span>}
-                                                <button
-                                                    className="vm-kick-btn"
-                                                    title={`Mute ${p.name}`}
-                                                    onClick={() => {
-                                                        wsRef.current?.send(JSON.stringify({
-                                                            type: 'admin-setting',
-                                                            setting: 'mute-participant',
-                                                            target_user_id: p.id,
-                                                            target_name: p.name,
-                                                        }));
-                                                        toast.success(`Mute request sent to ${p.name}`);
-                                                    }}
-                                                >
-                                                    <VolumeX size={12} />
-                                                </button>
-                                                <button
-                                                    className="vm-kick-btn"
-                                                    title={`Remove ${p.name}`}
-                                                    onClick={() => {
-                                                        if (confirm(`Remove ${p.name} from the meeting?`)) {
-                                                            wsRef.current?.send(JSON.stringify({
-                                                                type: 'kick', target_user_id: p.id
-                                                            }));
-                                                            toast.success(`${p.name} has been removed`);
-                                                        }
-                                                    }}
-                                                >
-                                                    <X size={12} />
-                                                </button>
+                                                {isHost && (
+                                                    <>
+                                                        <button
+                                                            className="vm-kick-btn"
+                                                            title={`Mute ${p.name}`}
+                                                            onClick={() => {
+                                                                wsRef.current?.send(JSON.stringify({
+                                                                    type: 'admin-setting',
+                                                                    setting: 'mute-participant',
+                                                                    target_user_id: p.id,
+                                                                    target_name: p.name,
+                                                                }));
+                                                                toast.success(`Mute request sent to ${p.name}`);
+                                                            }}
+                                                        >
+                                                            <VolumeX size={12} />
+                                                        </button>
+                                                        <button
+                                                            className="vm-kick-btn"
+                                                            title={`Remove ${p.name}`}
+                                                            onClick={() => {
+                                                                if (confirm(`Remove ${p.name} from the meeting?`)) {
+                                                                    wsRef.current?.send(JSON.stringify({
+                                                                        type: 'kick', target_user_id: p.id
+                                                                    }));
+                                                                    toast.success(`${p.name} has been removed`);
+                                                                }
+                                                            }}
+                                                        >
+                                                            <X size={12} />
+                                                        </button>
+                                                    </>
+                                                )}
                                             </div>
                                         </div>
                                     ))}
 
-                                    {/* ── Host Controls Section ── */}
+                                    {/* ── Host Controls Section (only visible to host) ── */}
+                                    {isHost && (
                                     <div className="vm-admin-controls">
                                         <div className="vm-admin-title">🛡️ Host Controls</div>
 
@@ -1441,6 +1507,7 @@ export default function VideoMeetingPage() {
                                             <span>{privateChatEnabled ? 'Disable Private Chat' : 'Enable Private Chat'}</span>
                                         </button>
                                     </div>
+                                    )}
                                 </div>
                             )}
 

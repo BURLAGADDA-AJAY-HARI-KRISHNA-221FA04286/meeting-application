@@ -100,6 +100,7 @@ class RoomInfoResponse(BaseModel):
     meeting_code: str
     title: str
     host_name: str
+    host_user_id: int = 0
     join_link: str
     active_participants: int
     created_at: str
@@ -203,6 +204,7 @@ async def get_room_info(
             meeting_code="",
             title="Meeting",
             host_name="",
+            host_user_id=0,
             join_link=f"/meetings/room/{room_id}",
             active_participants=0,
             created_at=datetime.utcnow().isoformat(),
@@ -213,6 +215,7 @@ async def get_room_info(
         meeting_code=room["meeting_code"],
         title=room["title"],
         host_name=room["host_name"],
+        host_user_id=room.get("host_user_id", 0),
         join_link=f"/meetings/room/{room_id}",
         active_participants=len(room["participants"]),
         created_at=room["created_at"],
@@ -352,22 +355,28 @@ async def video_meeting_websocket(
     code = room_id_to_code.get(room_id)
     room = video_rooms.get(code) if code else None
 
-    # If no room exists yet, create a minimal room entry
+    # If no room exists yet, check if they passed the meeting code directly as the room_id parameter
     if not room:
-        if not code:
-            code = room_id  # use room_id as code fallback
+        if room_id in video_rooms:
+            code = room_id
+            room = video_rooms[code]
+            # Ensure the mapping exists
+            room_id_to_code[room["room_id"]] = code
+        else:
+            # Still no room, create a minimal room entry using room_id as code fallback
+            code = room_id
             room_id_to_code[room_id] = code
-        video_rooms[code] = {
-            "room_id": room_id,
-            "meeting_code": code,
-            "title": "Meeting",
-            "password_hash": "",
-            "host_user_id": user_id,
-            "host_name": display_name,
-            "participants": [],
-            "created_at": datetime.utcnow().isoformat(),
-        }
-        room = video_rooms[code]
+            video_rooms[code] = {
+                "room_id": room_id,
+                "meeting_code": code,
+                "title": "Meeting",
+                "password_hash": "",
+                "host_user_id": user_id,
+                "host_name": display_name,
+                "participants": [],
+                "created_at": datetime.utcnow().isoformat(),
+            }
+            room = video_rooms[code]
 
     async with _get_room_lock(code):
         participant = {"ws": websocket, "user_id": user_id, "display_name": display_name}
@@ -391,6 +400,7 @@ async def video_meeting_websocket(
         await websocket.send_json({
             "type": "room-state",
             "participants": existing_participants,
+            "host_user_id": room.get("host_user_id", 0),
         })
 
         while True:
@@ -400,8 +410,13 @@ async def video_meeting_websocket(
             if msg_type == "signal":
                 target_id = data.get("target")
                 payload = data.get("payload")
+                # Normalize target_id to int for comparison (JSON may send as string or int)
+                try:
+                    target_id_int = int(target_id)
+                except (TypeError, ValueError):
+                    target_id_int = target_id
                 target_ws = next(
-                    (p["ws"] for p in room["participants"] if p["user_id"] == target_id),
+                    (p["ws"] for p in room["participants"] if p["user_id"] == target_id_int),
                     None,
                 )
                 if target_ws:
@@ -418,6 +433,14 @@ async def video_meeting_websocket(
                     "sender_name": display_name,
                     "text": data.get("text"),
                 })
+
+            elif msg_type == "caption":
+                await broadcast(code, {
+                    "type": "caption",
+                    "text": data.get("text"),
+                    "speaker": display_name,
+                    "speaker_name": display_name,
+                }, exclude=websocket)
 
             elif msg_type == "reaction":
                 await broadcast(code, {

@@ -4,7 +4,8 @@ import { meetingsAPI, aiAPI } from '../api';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
     Plus, Search, Video, Calendar, Trash2, Grid3X3,
-    List, ChevronRight, Brain, Clock, Sparkles, Loader2
+    List, ChevronRight, Brain, Clock, Sparkles, Loader2,
+    Link
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import './Meetings.css';
@@ -105,6 +106,13 @@ export default function MeetingsPage() {
         } finally {
             setAnalyzingIds(prev => { const s = new Set(prev); s.delete(id); return s; });
         }
+    };
+
+    // ── Copy Link ──
+    const handleCopyLink = (e, id) => {
+        e.stopPropagation();
+        navigator.clipboard.writeText(`${window.location.origin}/meetings/${id}`);
+        toast.success('Meeting link copied to clipboard!');
     };
 
     if (loading) {
@@ -262,6 +270,13 @@ export default function MeetingsPage() {
                                         )}
                                         <button
                                             className="btn btn-ghost btn-sm mc-delete"
+                                            onClick={(e) => handleCopyLink(e, m.id)}
+                                            title="Copy link to clipboard"
+                                        >
+                                            <Link size={14} />
+                                        </button>
+                                        <button
+                                            className="btn btn-ghost btn-sm mc-delete"
                                             onClick={(e) => handleDelete(e, m.id)}
                                             title="Delete meeting"
                                         >
@@ -336,6 +351,13 @@ export default function MeetingsPage() {
                                 <span className={`badge mli-status ${m.has_analysis ? 'badge-success' : 'badge-warning'}`}>
                                     {m.has_analysis ? 'analyzed' : 'pending'}
                                 </span>
+                                <button
+                                    className="btn btn-ghost btn-sm"
+                                    onClick={(e) => handleCopyLink(e, m.id)}
+                                    title="Copy link to clipboard"
+                                >
+                                    <Link size={14} />
+                                </button>
                                 <button
                                     className="btn btn-ghost btn-sm"
                                     onClick={(e) => handleDelete(e, m.id)}

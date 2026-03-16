@@ -139,7 +139,9 @@ export default function DashboardPage() {
                             {greeting()}, <span className="gradient-text">{user?.full_name?.split(' ')[0] || 'there'}</span> 👋
                         </h1>
                         <p className="hero-desc">
-                            Your AI-powered meeting workspace is ready. Create new meetings, analyze transcripts, or review your task board.
+                            {(s.tasks_todo || 0) + (s.tasks_in_progress || 0) > 0
+                                ? `You have ${(s.tasks_todo || 0) + (s.tasks_in_progress || 0)} pending tasks waiting for you. Let's get things done today!`
+                                : `You're all caught up on tasks! Create new meetings, analyze transcripts, or review your workspace.`}
                         </p>
                     </div>
                     <div className="hero-actions">
